@@ -87,6 +87,7 @@ create_links() {
 }
 
 prepare() {
+    rm -rf "${_pkg}"
     sh "${_pkg}.run" --extract-only
 
     cd "${_pkg}"
