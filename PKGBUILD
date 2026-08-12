@@ -8,11 +8,12 @@
 # Contributor: Sven-Hendrik Haase <svenstaro@gmail.com>
 # Contributor: Thomas Baechler <thomas@archlinux.org>
 # Contributor: James Rayner <iphitus@gmail.com>
+# Contributor: Gyöngyösi Gábor <gabor at gshoots dot hu>
 
 pkgbase=nvidia-390xx-utils
 pkgname=('nvidia-390xx-utils' 'opencl-nvidia-390xx' 'nvidia-390xx-dkms' 'mhwd-nvidia-390xx')
 pkgver=390.157
-pkgrel=28
+pkgrel=29
 arch=('x86_64')
 url="https://www.nvidia.com/"
 license=('custom')
@@ -43,6 +44,7 @@ source=("https://us.download.nvidia.com/XFree86/Linux-x86_64/${pkgver}/${_pkg}.r
         'kernel-6.17.patch'
         'kernel-6.19.patch'
         'kernel-7.0.patch'
+        'kernel-7.2.patch'
         'kernel-6.19-5.10.patch'
         'make-modesetting-default.patch'
         'kernel-6.18-nv_workqueue_flush.patch')
@@ -71,6 +73,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             'f9c37768b3dfb9f7ebcb60cd5441d8fce14f1f9a29836fd9cfe1a205bc46d72a'
             '4c17a28b9491fc4672bb2e6775b827eb83be6bde2d6ba892c40d7919d3638d86'
             '7255f73688a8ebc0899316d69c36d4bc38cb4f66a60fbf429ded01047bdd7d41'
+            'f38ebdc28771dbaa8b824448503d12df7752788769c79b7ce9e984ef495f56bc'
             '34730c8cd8fafd5a31f4f4f57a11d48bb4d4f820e230019a0c82b1859a563b8a'
             '994675c116840e4d1eecf457f67c468f973424f3ef6657c6b72bee88ebbb982e'
             'e1bba1a8b4081730998cc747beeb85f70f152cae5993048619833f24d3c9f56b')
@@ -119,6 +122,9 @@ prepare() {
 
     # https://bbs.archlinux.org/viewtopic.php?id=312658
     patch -Np1 -i ../kernel-6.18-nv_workqueue_flush.patch
+    
+    # Linux 7.2 support (drm_atomic_state → drm_atomic_commit, strncpy removal)
+    patch -Np1 -d kernel -i "${srcdir}/kernel-7.2.patch"
 
     cd kernel
     sed -i "s/__VERSION_STRING/${pkgver}/" dkms.conf
