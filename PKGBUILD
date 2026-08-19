@@ -12,7 +12,7 @@
 pkgbase=nvidia-390xx-utils
 pkgname=('nvidia-390xx-utils' 'opencl-nvidia-390xx' 'nvidia-390xx-dkms' 'mhwd-nvidia-390xx')
 pkgver=390.157
-pkgrel=29
+pkgrel=30
 arch=('x86_64')
 url="https://www.nvidia.com/"
 license=('custom')
@@ -45,7 +45,9 @@ source=("https://us.download.nvidia.com/XFree86/Linux-x86_64/${pkgver}/${_pkg}.r
         'kernel-6.19-5.10.patch'
         'make-modesetting-default.patch'
         'kernel-6.18-nv_workqueue_flush.patch'
-        'kernel-7.2.patch')
+        'nvidia-470xx-fix-linux-7.2-part1.patch'
+        'nvidia-470xx-fix-linux-7.2-part2.patch'
+        'nvidia-470xx-fix-linux-7.2-part3.patch')
 sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '11176f1c070bbdbfaa01a3743ec065fe71ff867b9f72f1dce0de0339b5873bb5'
             '089d6dc247c9091b320c418b0d91ae6adda65e170934d178cdd4e9bd0785b182'
@@ -73,7 +75,9 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '34730c8cd8fafd5a31f4f4f57a11d48bb4d4f820e230019a0c82b1859a563b8a'
             '994675c116840e4d1eecf457f67c468f973424f3ef6657c6b72bee88ebbb982e'
             'e1bba1a8b4081730998cc747beeb85f70f152cae5993048619833f24d3c9f56b'
-            'f38ebdc28771dbaa8b824448503d12df7752788769c79b7ce9e984ef495f56bc')
+            'b7085aa7d8d5ae0280e2059803cbf16355a86b5ce5ef1424375ae0be60724675'
+            'b1f1ea9f2d2da382ddf40a4959a4f83f4b97c1f1b14db06fd0ab777340c22532'
+            '5c3cbe1edf4f299f784bf2081e0bcacc5cfc03e63df54c2b54a804d21524a3f7')
 
 create_links() {
     # create soname links
@@ -115,7 +119,9 @@ prepare() {
     patch -Np1 -i ../kernel-6.19.patch
     patch -Np1 -i ../kernel-6.19-5.10.patch
     patch -Np1 -i ../kernel-7.0.patch
-    patch -Np1 -d kernel -i "${srcdir}/kernel-7.2.patch"
+    patch -Np1 -d kernel -i "${srcdir}"/nvidia-470xx-fix-linux-7.2-part1.patch
+    patch -Np1 -d kernel -i "${srcdir}"/nvidia-470xx-fix-linux-7.2-part2.patch
+    patch -Np1 -d kernel -i "${srcdir}"/nvidia-470xx-fix-linux-7.2-part3.patch
 
     # https://bbs.archlinux.org/viewtopic.php?id=312658
     patch -Np1 -i ../kernel-6.18-nv_workqueue_flush.patch
