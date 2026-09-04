@@ -47,7 +47,8 @@ source=("https://us.download.nvidia.com/XFree86/Linux-x86_64/${pkgver}/${_pkg}.r
         'make-modesetting-default.patch'
         'kernel-6.18-nv_workqueue_flush.patch'
         'kernel-7.2.patch'
-        'nvidia-470xx-fix-linux-7.3.patch')
+        'nvidia-470xx-fix-linux-7.3.patch'
+        'extra-warning-flags.patch')
 sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '11176f1c070bbdbfaa01a3743ec065fe71ff867b9f72f1dce0de0339b5873bb5'
             '089d6dc247c9091b320c418b0d91ae6adda65e170934d178cdd4e9bd0785b182'
@@ -77,7 +78,8 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '994675c116840e4d1eecf457f67c468f973424f3ef6657c6b72bee88ebbb982e'
             'e1bba1a8b4081730998cc747beeb85f70f152cae5993048619833f24d3c9f56b'
             '6b4d3fa68e8e139ee49da6b0c146d6fd4f17594f52f797e043191185ead0e2e2'
-            '919b2b04357ce50a461d1a407bf7c9c58fad632a8c8285754b550b6e177575a5')
+            '919b2b04357ce50a461d1a407bf7c9c58fad632a8c8285754b550b6e177575a5'
+            'c123745e257da9dcfcb6d8a6976748e1c0893860c06131e3ac0163f266e3913c')
 
 create_links() {
     # create soname links
@@ -115,6 +117,7 @@ prepare() {
     patch -Np1 -i ../kernel-6.14.patch
     patch -Np1 -i ../gcc-15.patch
     patch -Np1 -i ../kernel-6.15.patch
+    patch -Np1 -i ../extra-warning-flags.patch
     patch -Np1 -i ../kernel-6.17.patch
     patch -Np1 -i ../kernel-6.19.patch
     patch -Np1 -i ../kernel-6.19-5.10.patch
