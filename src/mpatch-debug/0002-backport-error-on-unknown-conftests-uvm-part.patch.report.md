@@ -1,0 +1,2528 @@
+# Mpatch Debug Report
+
+> **Note:** This report has been partially anonymized. Please review for any remaining sensitive information before sharing.
+
+- **Mpatch Version:** `1.6.4`
+- **OS:** `linux`
+- **Architecture:** `x86_64`
+- **Timestamp (Unix):** `1790784822`
+
+## Command Line
+
+```sh
+mpatch -vvvv --dry-run <INPUT_FILE> <TARGET_DIR>
+```
+
+## Input Patch File
+
+````markdown
+From 3f99d1f657bbdab4678dee7b3f53c9fdad60abe9 Mon Sep 17 00:00:00 2001
+From: Andreas Beckmann <anbe@debian.org>
+Date: Wed, 22 Dec 2021 18:06:40 +0100
+Subject: [PATCH 2/2] backport error on unknown conftests (uvm part)
+
+---
+ nvidia-uvm/nvidia-uvm.Kbuild | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/nvidia-uvm/nvidia-uvm.Kbuild b/nvidia-uvm/nvidia-uvm.Kbuild
+index 2f4e1f3..0a4667b 100644
+--- a/nvidia-uvm/nvidia-uvm.Kbuild
++++ b/nvidia-uvm/nvidia-uvm.Kbuild
+@@ -91,7 +91,7 @@ endif
+ 
+ NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)
+ 
+-NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range
++#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range
+ NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range
+ NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page
+ NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create
+-- 
+2.20.1
+
+
+````
+
+## Original Target File(s)
+
+### File: `nvidia-uvm/nvidia-uvm.Kbuild`
+
+````Kbuild
+###########################################################################
+# Kbuild fragment for nvidia-uvm.ko
+###########################################################################
+
+UVM_BUILD_TYPE = release
+
+MIN_VERSION    := 2
+MIN_PATCHLEVEL := 6
+MIN_SUBLEVEL   := 32
+
+KERNEL_VERSION_NUMERIC := $(shell echo $$(( $(VERSION) * 65536 + $(PATCHLEVEL) * 256 + $(SUBLEVEL) )))
+MIN_VERSION_NUMERIC    := $(shell echo $$(( $(MIN_VERSION) * 65536 + $(MIN_PATCHLEVEL) * 256 + $(MIN_SUBLEVEL) )))
+
+KERNEL_NEW_ENOUGH_FOR_UVM := $(shell [ $(KERNEL_VERSION_NUMERIC) -ge $(MIN_VERSION_NUMERIC) ] && echo 1)
+
+#
+# Define NVIDIA_UVM_{SOURCES,OBJECTS}
+#
+
+NVIDIA_UVM_OBJECTS =
+NVIDIA_UVM_UNSUPPORTED_SOURCE := nvidia-uvm/uvm_unsupported.c
+
+ifeq ($(KERNEL_NEW_ENOUGH_FOR_UVM),1)
+  include $(src)/nvidia-uvm/nvidia-uvm-sources.Kbuild
+  NVIDIA_UVM_OBJECTS += $(patsubst %.c,%.o,\
+      $(filter-out $(NVIDIA_UVM_UNSUPPORTED_SOURCE),$(NVIDIA_UVM_SOURCES)))
+else
+  NVIDIA_UVM_SOURCES = $(NVIDIA_UVM_UNSUPPORTED_SOURCE)
+  NVIDIA_UVM_OBJECTS += $(patsubst %.c,%.o,$(NVIDIA_UVM_SOURCES))
+endif
+
+# Some linux kernel functions rely on being built with optimizations on and
+# to work around this we put wrappers for them in a separate file that's built
+# with optimizations on in debug builds and skipped in other builds.
+# Notably gcc 4.4 supports per function optimization attributes that would be
+# easier to use, but is too recent to rely on for now.
+NVIDIA_UVM_DEBUG_OPTIMIZED_SOURCE := nvidia-uvm/uvm_debug_optimized.c
+NVIDIA_UVM_DEBUG_OPTIMIZED_OBJECT := $(patsubst %.c,%.o,$(NVIDIA_UVM_DEBUG_OPTIMIZED_SOURCE))
+
+ifneq ($(UVM_BUILD_TYPE),debug)
+  # Only build the wrappers on debug builds
+  NVIDIA_UVM_OBJECTS := $(filter-out $(NVIDIA_UVM_DEBUG_OPTIMIZED_OBJECT), $(NVIDIA_UVM_OBJECTS))
+endif
+
+obj-m += nvidia-uvm.o
+nvidia-uvm-y := $(NVIDIA_UVM_OBJECTS)
+
+NVIDIA_UVM_KO = nvidia-uvm/nvidia-uvm.ko
+
+#
+# Define nvidia-uvm.ko-specific CFLAGS.
+#
+
+ifeq ($(UVM_BUILD_TYPE),debug)
+  NVIDIA_UVM_CFLAGS += -DDEBUG $(call cc-option,-Og,-O0) -g
+else
+  ifeq ($(UVM_BUILD_TYPE),develop)
+    # -DDEBUG is required, in order to allow pr_devel() print statements to
+    # work:
+    NVIDIA_UVM_CFLAGS += -DDEBUG
+    NVIDIA_UVM_CFLAGS += -DNVIDIA_UVM_DEVELOP
+  endif
+  NVIDIA_UVM_CFLAGS += -O2
+endif
+
+NVIDIA_UVM_CFLAGS += -DNVIDIA_UVM_ENABLED
+NVIDIA_UVM_CFLAGS += -DNVIDIA_UNDEF_LEGACY_BIT_MACROS
+
+NVIDIA_UVM_CFLAGS += -DLinux
+NVIDIA_UVM_CFLAGS += -D__linux__
+NVIDIA_UVM_CFLAGS += -I$(src)/nvidia-uvm
+
+# Avoid even building HMM until the HMM patch is in the upstream kernel.
+# Bug 1772628 has details.
+NV_BUILD_SUPPORTS_HMM ?= 0
+
+ifeq ($(NV_BUILD_SUPPORTS_HMM),1)
+  NVIDIA_UVM_CFLAGS += -DNV_BUILD_SUPPORTS_HMM
+endif
+
+$(call ASSIGN_PER_OBJ_CFLAGS, $(NVIDIA_UVM_OBJECTS), $(NVIDIA_UVM_CFLAGS))
+
+ifeq ($(UVM_BUILD_TYPE),debug)
+  # Force optimizations on for the wrappers
+  $(call ASSIGN_PER_OBJ_CFLAGS, $(NVIDIA_UVM_DEBUG_OPTIMIZED_OBJECT), $(NVIDIA_UVM_CFLAGS) -O2)
+endif
+
+#
+# Register the conftests needed by nvidia-uvm.ko
+#
+
+NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)
+
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += list_cut_position
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += vzalloc
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += wait_on_bit_lock_argument_count
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += proc_create_data
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += pde_data
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += PDE_DATA
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += proc_remove
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += bitmap_clear
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += usleep_range
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += radix_tree_empty
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += radix_tree_replace_slot
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += do_gettimeofday
+NV_CONFTEST_FUNCTION_COMPILE_TESTS += ktime_get_raw_ts64
+
+NV_CONFTEST_TYPE_COMPILE_TESTS += proc_dir_entry
+NV_CONFTEST_TYPE_COMPILE_TESTS += irq_handler_t
+NV_CONFTEST_TYPE_COMPILE_TESTS += outer_flush_all
+NV_CONFTEST_TYPE_COMPILE_TESTS += vm_operations_struct
+NV_CONFTEST_TYPE_COMPILE_TESTS += file_operations
+NV_CONFTEST_TYPE_COMPILE_TESTS += task_struct
+NV_CONFTEST_TYPE_COMPILE_TESTS += kuid_t
+NV_CONFTEST_TYPE_COMPILE_TESTS += fault_flags
+NV_CONFTEST_TYPE_COMPILE_TESTS += atomic64_type
+NV_CONFTEST_TYPE_COMPILE_TESTS += address_space
+NV_CONFTEST_TYPE_COMPILE_TESTS += backing_dev_info
+NV_CONFTEST_TYPE_COMPILE_TESTS += mm_context_t
+NV_CONFTEST_TYPE_COMPILE_TESTS += get_user_pages_remote
+NV_CONFTEST_TYPE_COMPILE_TESTS += get_user_pages
+NV_CONFTEST_TYPE_COMPILE_TESTS += vm_fault_has_address
+NV_CONFTEST_TYPE_COMPILE_TESTS += vm_fault_present
+NV_CONFTEST_TYPE_COMPILE_TESTS += vm_ops_fault_removed_vma_arg
+NV_CONFTEST_TYPE_COMPILE_TESTS += vm_fault_t
+NV_CONFTEST_TYPE_COMPILE_TESTS += proc_ops
+NV_CONFTEST_TYPE_COMPILE_TESTS += timeval
+NV_CONFTEST_TYPE_COMPILE_TESTS += mm_has_mmap_lock
+NV_CONFTEST_TYPE_COMPILE_TESTS += pnv_npu2_init_context
+NV_CONFTEST_TYPE_COMPILE_TESTS += kmem_cache_has_kobj_remove_work
+NV_CONFTEST_TYPE_COMPILE_TESTS += sysfs_slab_unlink
+
+````
+
+## Full Trace Log
+
+````log
+
+Found 1 patch operation(s) to perform.
+Fuzzy matching enabled with threshold: 0.70
+debug: apply_patches_to_dir: applying 1 patch(es) to '.' (dry_run=true, fuzz=0.70)
+debug:   [1/1] Applying patch for 'nvidia-uvm/nvidia-uvm.Kbuild' (1 hunk(s))
+Applying patch to: nvidia-uvm/nvidia-uvm.Kbuild
+debug:   apply_patch_to_file: target_dir='.', hunks=1, dry_run=true, fuzz=0.70
+trace:   Checking path safety for base '.' and relative path 'nvidia-uvm/nvidia-uvm.Kbuild'
+trace:   ensure_path_is_safe: canonicalized base directory '<TARGET_DIR>'
+trace:   ensure_path_is_safe: processing component 'Normal("nvidia-uvm")' on virtual path '<TARGET_DIR>'
+trace:   ensure_path_is_safe: processing component 'Normal("nvidia-uvm.Kbuild")' on virtual path '<TARGET_DIR>/nvidia-uvm'
+trace:   Path safety verified: 'nvidia-uvm/nvidia-uvm.Kbuild' safely resolves to '<TARGET_DIR>/nvidia-uvm/nvidia-uvm.Kbuild'
+debug:   Resolved safe target path: '<TARGET_DIR>/nvidia-uvm/nvidia-uvm.Kbuild'
+debug:   Target file exists: '<TARGET_DIR>/nvidia-uvm/nvidia-uvm.Kbuild'. Reading content...
+trace:     Read 5345 bytes (138 lines) from target file.
+debug:   Applying patch logic to content in-memory...
+debug: apply_patch_to_content: patch for 'nvidia-uvm/nvidia-uvm.Kbuild' (1 hunks), original content: 5345 bytes
+debug:   apply_patch_to_lines called with 138 lines of original content.
+debug: resolve_hunk_line_hints: evaluating 1 hunk(s) across 138 target lines
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: is_low_entropy_line: line '' is low-entropy
+trace:   Hunk 1: already has explicit line hint 91
+trace: resolve_hunk_line_hints: beginning relaxation pass 1
+debug: resolve_hunk_line_hints: completed hint resolution. 1/1 hunk(s) have anchors.
+debug: HunkApplier: initialized with 1 hunk(s) across 138 line(s) of target content (fuzz_factor=0.70, dry_run=true)
+trace: HunkApplier::set_original_newline_status: original_ends_with_newline=true
+debug: apply_hunk_to_lines: applying hunk with 10 line(s) against target with 138 line(s)
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:   Match block: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "- ", "2.20.1"]
+trace: Hunk::get_replace_block: extracted 8 replacement line(s)
+trace:   Replace block: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "2.20.1"]
+trace: Hunk::has_changes: true
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: Hunk::required_match_span: calculated required match span as 5 line(s) (first_match_idx=Some(3), last_match_idx=Some(7))
+trace: DefaultHunkFinder::find_candidate_locations: match block len=9, required_match_span=5, target lines=138
+trace: is_low_entropy_line: line '' is low-entropy
+trace:   find_hunk_location_internal: match_block has 9 lines (entropy=true), target has 138 lines
+trace:   find_hunk_location_internal called for a hunk with 9 lines to match against 138 target lines.
+trace:     Attempting exact match for hunk (match block has 9 line(s))...
+trace: tie_break_with_line_number: strategy='exact', hint=Some(91), entropy=true
+trace:       No exact matches found.
+trace:     Strategy 1 (Exact): no exact match found.
+trace:     Attempting exact match (ignoring trailing whitespace) for hunk (match block has 9 line(s))...
+trace: tie_break_with_line_number: strategy='exact (ignoring whitespace)', hint=Some(91), entropy=true
+trace:       No exact (ignoring whitespace) matches found.
+trace:     Strategy 2 (Whitespace-insensitive): no match found.
+debug:     Strategy 3 (Fuzzy): beginning flexible window fuzzy search (threshold=0.70, match block len=0.7)
+trace:       Hunk match block (9 lines): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "- ", "2.20.1"]
+trace:       Searching with window sizes from 5 to 33 (hunk size: 9, fuzz distance: 24)
+debug:       find_search_ranges: analyzing 9 match line(s) against 138 target line(s).
+trace:         Identified 6 high-entropy candidate anchor line(s) (search_radius=18, max candidates to test=100)
+debug:         Spatial consensus: 5 anchor(s) agree on start near line 88
+debug:       Found anchor line (hunk line 7) with 1 occurrences.
+trace:         Anchor text: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:         Occurrence at target line 97: window estimated [73..138] (search radius +/-18)
+trace:         Raw ranges before merging: [(72, 138)]
+trace: merge_ranges: merging 1 input range(s): [(72, 138)]
+trace: merge_ranges: result 1 disjoint range(s): [(72, 138)]
+debug:       Search ranges merged: 1 disjoint range(s) covering 66/138 line(s) (52.2% pruned): [(72, 138)]
+trace:     Using search ranges: [(72, 138)]
+debug:       compute_scored_windows (parallel): evaluating 1392 candidate window(s) across 1 range(s) (window lengths 5..=33)
+trace:         Match block length: 9, Target line count: 138, Search ranges: [(72, 138)]
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.222
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.412
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.235
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.221
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.392
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.173
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.453
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.220
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.444
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.175
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.506
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.445
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.219
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.426
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.497
+trace:         score_window: window_len=13, match_len=9, line_score=0.217, ratio_lines=0.182, final_score=0.223
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.534
+trace:         score_window: window_len=14, match_len=9, line_score=0.216, ratio_lines=0.174, final_score=0.216
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.523
+trace:         score_window: window_len=15, match_len=9, line_score=0.215, ratio_lines=0.167, final_score=0.215
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.548
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.486
+trace:         score_window: window_len=16, match_len=9, line_score=0.214, ratio_lines=0.160, final_score=0.214
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.444
+trace:         score_window: window_len=22, match_len=9, line_score=0.412, ratio_lines=0.258, final_score=0.412
+trace:         score_window: window_len=23, match_len=9, line_score=0.512, ratio_lines=0.312, final_score=0.512
+trace:         score_window: window_len=24, match_len=9, line_score=0.611, ratio_lines=0.364, final_score=0.611
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.519
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.560
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.227
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.548
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.235
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.578
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.236
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.250
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.513
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.253
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.510
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.274
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.546
+trace:         score_window: window_len=13, match_len=9, line_score=0.217, ratio_lines=0.182, final_score=0.253
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.593
+trace:         score_window: window_len=14, match_len=9, line_score=0.216, ratio_lines=0.174, final_score=0.262
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.580
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.616
+trace:         score_window: window_len=15, match_len=9, line_score=0.215, ratio_lines=0.167, final_score=0.244
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.475
+trace:         score_window: window_len=16, match_len=9, line_score=0.214, ratio_lines=0.160, final_score=0.242
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.508
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.548
+trace:         score_window: window_len=17, match_len=9, line_score=0.212, ratio_lines=0.154, final_score=0.241
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.599
+trace:         score_window: window_len=18, match_len=9, line_score=0.211, ratio_lines=0.148, final_score=0.240
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.585
+trace:         score_window: window_len=21, match_len=9, line_score=0.415, ratio_lines=0.267, final_score=0.415
+trace:         score_window: window_len=22, match_len=9, line_score=0.515, ratio_lines=0.323, final_score=0.515
+trace:         score_window: window_len=23, match_len=9, line_score=0.615, ratio_lines=0.375, final_score=0.615
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.403
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.436
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.267
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.469
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.257
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.509
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.281
+trace:         score_window: window_len=5, match_len=9, line_score=0.143, ratio_lines=0.143, final_score=0.561
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.265
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.362
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.301
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.267
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.390
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.277
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.423
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.440
+trace:         score_window: window_len=13, match_len=9, line_score=0.217, ratio_lines=0.182, final_score=0.288
+trace:         score_window: window_len=5, match_len=9, line_score=0.143, ratio_lines=0.143, final_score=0.460
+trace:         score_window: window_len=14, match_len=9, line_score=0.216, ratio_lines=0.174, final_score=0.268
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.344
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.371
+trace:         score_window: window_len=15, match_len=9, line_score=0.215, ratio_lines=0.167, final_score=0.250
+trace:         score_window: window_len=10, match_len=9, line_score=0.110, ratio_lines=0.105, final_score=0.321
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.403
+trace:         score_window: window_len=16, match_len=9, line_score=0.214, ratio_lines=0.160, final_score=0.257
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.418
+trace:         score_window: window_len=5, match_len=9, line_score=0.143, ratio_lines=0.143, final_score=0.436
+trace:         score_window: window_len=17, match_len=9, line_score=0.212, ratio_lines=0.154, final_score=0.254
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.327
+trace:         score_window: window_len=18, match_len=9, line_score=0.211, ratio_lines=0.148, final_score=0.211
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.353
+trace:         score_window: window_len=19, match_len=9, line_score=0.315, ratio_lines=0.214, final_score=0.315
+trace:         score_window: window_len=20, match_len=9, line_score=0.417, ratio_lines=0.276, final_score=0.417
+trace:         score_window: window_len=21, match_len=9, line_score=0.519, ratio_lines=0.333, final_score=0.519
+trace:         score_window: window_len=22, match_len=9, line_score=0.619, ratio_lines=0.387, final_score=0.619
+trace:         score_window: window_len=10, match_len=9, line_score=0.110, ratio_lines=0.105, final_score=0.305
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.382
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.396
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=5, match_len=9, line_score=0.143, ratio_lines=0.143, final_score=0.411
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.300
+trace:         score_window: window_len=9, match_len=9, line_score=0.111, ratio_lines=0.111, final_score=0.414
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.288
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.444
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.319
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.279
+trace:         score_window: window_len=10, match_len=9, line_score=0.110, ratio_lines=0.105, final_score=0.397
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.293
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.287
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.472
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.304
+trace:         score_window: window_len=5, match_len=9, line_score=0.286, ratio_lines=0.286, final_score=0.286
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.512
+trace:         score_window: window_len=5, match_len=9, line_score=0.143, ratio_lines=0.143, final_score=0.434
+trace:         score_window: window_len=13, match_len=9, line_score=0.217, ratio_lines=0.182, final_score=0.282
+trace:         score_window: window_len=9, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=14, match_len=9, line_score=0.216, ratio_lines=0.174, final_score=0.262
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.403
+trace:         score_window: window_len=15, match_len=9, line_score=0.215, ratio_lines=0.167, final_score=0.270
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.432
+trace:         score_window: window_len=16, match_len=9, line_score=0.214, ratio_lines=0.160, final_score=0.265
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.459
+trace:         score_window: window_len=17, match_len=9, line_score=0.212, ratio_lines=0.154, final_score=0.212
+trace:         score_window: window_len=18, match_len=9, line_score=0.317, ratio_lines=0.222, final_score=0.317
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.498
+trace:         score_window: window_len=19, match_len=9, line_score=0.420, ratio_lines=0.286, final_score=0.420
+trace:         score_window: window_len=20, match_len=9, line_score=0.522, ratio_lines=0.345, final_score=0.522
+trace:         score_window: window_len=21, match_len=9, line_score=0.622, ratio_lines=0.400, final_score=0.622
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=9, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.381
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.403
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.422
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.326
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.307
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.456
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.487
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.299
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.296
+trace:         score_window: window_len=9, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.322
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.310
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.287
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.288
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=13, match_len=9, line_score=0.217, ratio_lines=0.182, final_score=0.267
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=9, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.322
+trace:         score_window: window_len=14, match_len=9, line_score=0.216, ratio_lines=0.174, final_score=0.274
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=15, match_len=9, line_score=0.215, ratio_lines=0.167, final_score=0.270
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=16, match_len=9, line_score=0.214, ratio_lines=0.160, final_score=0.214
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=17, match_len=9, line_score=0.319, ratio_lines=0.231, final_score=0.319
+trace:         score_window: window_len=18, match_len=9, line_score=0.422, ratio_lines=0.296, final_score=0.422
+trace:         score_window: window_len=19, match_len=9, line_score=0.525, ratio_lines=0.357, final_score=0.525
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=20, match_len=9, line_score=0.626, ratio_lines=0.414, final_score=0.626
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=9, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.322
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.297
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.325
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.308
+trace:         score_window: window_len=9, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.322
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.305
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.285
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.291
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.275
+trace:         score_window: window_len=5, match_len=9, line_score=0.286, ratio_lines=0.286, final_score=0.286
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=13, match_len=9, line_score=0.217, ratio_lines=0.182, final_score=0.274
+trace:         score_window: window_len=9, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.322
+trace:         score_window: window_len=14, match_len=9, line_score=0.216, ratio_lines=0.174, final_score=0.273
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=15, match_len=9, line_score=0.215, ratio_lines=0.167, final_score=0.215
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=16, match_len=9, line_score=0.320, ratio_lines=0.240, final_score=0.320
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=17, match_len=9, line_score=0.425, ratio_lines=0.308, final_score=0.425
+trace:         score_window: window_len=18, match_len=9, line_score=0.528, ratio_lines=0.370, final_score=0.528
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=19, match_len=9, line_score=0.630, ratio_lines=0.429, final_score=0.630
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.431
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.275
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.467
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.262
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.500
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.250
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.292
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.398
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.292
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.287
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.465
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.291
+trace:         score_window: window_len=5, match_len=9, line_score=0.286, ratio_lines=0.286, final_score=0.286
+trace:         score_window: window_len=13, match_len=9, line_score=0.217, ratio_lines=0.182, final_score=0.290
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.508
+trace:         score_window: window_len=14, match_len=9, line_score=0.216, ratio_lines=0.174, final_score=0.216
+trace:         score_window: window_len=15, match_len=9, line_score=0.322, ratio_lines=0.250, final_score=0.322
+trace:         score_window: window_len=16, match_len=9, line_score=0.427, ratio_lines=0.320, final_score=0.427
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.392
+trace:         score_window: window_len=17, match_len=9, line_score=0.531, ratio_lines=0.385, final_score=0.531
+trace:         score_window: window_len=18, match_len=9, line_score=0.633, ratio_lines=0.444, final_score=0.633
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.428
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.294
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.320
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.489
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.296
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.308
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.294
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.340
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.415
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.293
+trace:         score_window: window_len=5, match_len=9, line_score=0.286, ratio_lines=0.286, final_score=0.366
+trace:         score_window: window_len=13, match_len=9, line_score=0.217, ratio_lines=0.182, final_score=0.217
+trace:         score_window: window_len=14, match_len=9, line_score=0.324, ratio_lines=0.261, final_score=0.324
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.456
+trace:         score_window: window_len=15, match_len=9, line_score=0.430, ratio_lines=0.333, final_score=0.430
+trace:         score_window: window_len=16, match_len=9, line_score=0.534, ratio_lines=0.400, final_score=0.534
+trace:         score_window: window_len=17, match_len=9, line_score=0.637, ratio_lines=0.462, final_score=0.637
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.390
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.297
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.416
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.282
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.450
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.295
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.500
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.308
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.405
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.294
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.257
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.431
+trace:         score_window: window_len=12, match_len=9, line_score=0.219, ratio_lines=0.190, final_score=0.219
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.461
+trace:         score_window: window_len=5, match_len=9, line_score=0.143, ratio_lines=0.143, final_score=0.286
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.502
+trace:         score_window: window_len=13, match_len=9, line_score=0.326, ratio_lines=0.273, final_score=0.326
+trace:         score_window: window_len=14, match_len=9, line_score=0.432, ratio_lines=0.348, final_score=0.432
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=15, match_len=9, line_score=0.537, ratio_lines=0.417, final_score=0.537
+trace:         score_window: window_len=16, match_len=9, line_score=0.641, ratio_lines=0.480, final_score=0.641
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.223
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.263
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.221
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.250
+trace:         score_window: window_len=11, match_len=9, line_score=0.220, ratio_lines=0.200, final_score=0.220
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.295
+trace:         score_window: window_len=12, match_len=9, line_score=0.328, ratio_lines=0.286, final_score=0.328
+trace:         score_window: window_len=13, match_len=9, line_score=0.435, ratio_lines=0.364, final_score=0.435
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=14, match_len=9, line_score=0.540, ratio_lines=0.435, final_score=0.540
+trace:         score_window: window_len=15, match_len=9, line_score=0.644, ratio_lines=0.500, final_score=0.644
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.346
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.223
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.212
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.221
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.232
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=11, match_len=9, line_score=0.330, ratio_lines=0.300, final_score=0.330
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=12, match_len=9, line_score=0.437, ratio_lines=0.381, final_score=0.437
+trace:         score_window: window_len=13, match_len=9, line_score=0.543, ratio_lines=0.455, final_score=0.543
+trace:         score_window: window_len=14, match_len=9, line_score=0.648, ratio_lines=0.522, final_score=0.648
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.373
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.386
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.400
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.222
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.237
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.462
+trace:         score_window: window_len=10, match_len=9, line_score=0.331, ratio_lines=0.316, final_score=0.331
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.226
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.507
+trace:         score_window: window_len=11, match_len=9, line_score=0.440, ratio_lines=0.400, final_score=0.440
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.501
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.245
+trace:         score_window: window_len=9, match_len=9, line_score=0.667, ratio_lines=0.667, final_score=0.785
+trace:         score_window: window_len=12, match_len=9, line_score=0.546, ratio_lines=0.476, final_score=0.546
+trace:         score_window: window_len=8, match_len=9, line_score=0.588, ratio_lines=0.588, final_score=0.660
+trace:         score_window: window_len=7, match_len=9, line_score=0.500, ratio_lines=0.500, final_score=0.500
+trace:         score_window: window_len=6, match_len=9, line_score=0.400, ratio_lines=0.400, final_score=0.400
+trace:         score_window: window_len=5, match_len=9, line_score=0.286, ratio_lines=0.286, final_score=0.286
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=13, match_len=9, line_score=0.652, ratio_lines=0.545, final_score=0.652
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=7, match_len=9, line_score=0.625, ratio_lines=0.625, final_score=0.665
+trace:         score_window: window_len=6, match_len=9, line_score=0.533, ratio_lines=0.533, final_score=0.533
+trace:         score_window: window_len=5, match_len=9, line_score=0.429, ratio_lines=0.429, final_score=0.429
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=9, match_len=9, line_score=0.333, ratio_lines=0.333, final_score=0.333
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.235
+trace:         score_window: window_len=6, match_len=9, line_score=0.667, ratio_lines=0.667, final_score=0.729
+trace:         score_window: window_len=5, match_len=9, line_score=0.571, ratio_lines=0.571, final_score=0.571
+trace:         score_window: window_len=10, match_len=9, line_score=0.442, ratio_lines=0.421, final_score=0.442
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.250
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=11, match_len=9, line_score=0.549, ratio_lines=0.500, final_score=0.550
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=12, match_len=9, line_score=0.656, ratio_lines=0.571, final_score=0.664
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=9, match_len=9, line_score=0.667, ratio_lines=0.667, final_score=0.736
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=10, match_len=9, line_score=0.663, ratio_lines=0.632, final_score=0.694
+trace:         score_window: window_len=11, match_len=9, line_score=0.659, ratio_lines=0.600, final_score=0.659
+trace:         score_window: window_len=12, match_len=9, line_score=0.656, ratio_lines=0.571, final_score=0.656
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=13, match_len=9, line_score=0.652, ratio_lines=0.545, final_score=0.652
+trace:         score_window: window_len=14, match_len=9, line_score=0.648, ratio_lines=0.522, final_score=0.648
+trace:         score_window: window_len=15, match_len=9, line_score=0.644, ratio_lines=0.500, final_score=0.644
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=16, match_len=9, line_score=0.641, ratio_lines=0.480, final_score=0.641
+trace:         score_window: window_len=17, match_len=9, line_score=0.637, ratio_lines=0.462, final_score=0.637
+trace:         score_window: window_len=18, match_len=9, line_score=0.633, ratio_lines=0.444, final_score=0.633
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=19, match_len=9, line_score=0.630, ratio_lines=0.429, final_score=0.630
+trace:         score_window: window_len=20, match_len=9, line_score=0.626, ratio_lines=0.414, final_score=0.626
+trace:         score_window: window_len=9, match_len=9, line_score=0.444, ratio_lines=0.444, final_score=0.492
+trace:         score_window: window_len=21, match_len=9, line_score=0.622, ratio_lines=0.400, final_score=0.622
+trace:         score_window: window_len=8, match_len=9, line_score=0.353, ratio_lines=0.353, final_score=0.353
+trace:         score_window: window_len=22, match_len=9, line_score=0.619, ratio_lines=0.387, final_score=0.619
+trace:         score_window: window_len=23, match_len=9, line_score=0.615, ratio_lines=0.375, final_score=0.615
+trace:         score_window: window_len=10, match_len=9, line_score=0.552, ratio_lines=0.526, final_score=0.648
+trace:         score_window: window_len=24, match_len=9, line_score=0.611, ratio_lines=0.364, final_score=0.611
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.250
+trace:         score_window: window_len=25, match_len=9, line_score=0.607, ratio_lines=0.353, final_score=0.607
+trace:         score_window: window_len=26, match_len=9, line_score=0.604, ratio_lines=0.343, final_score=0.604
+trace:         score_window: window_len=11, match_len=9, line_score=0.659, ratio_lines=0.600, final_score=0.771
+trace:         score_window: window_len=27, match_len=9, line_score=0.600, ratio_lines=0.333, final_score=0.600
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.267
+trace:         score_window: window_len=28, match_len=9, line_score=0.596, ratio_lines=0.324, final_score=0.596
+trace:         score_window: window_len=29, match_len=9, line_score=0.593, ratio_lines=0.316, final_score=0.593
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.589, ratio_lines=0.308, final_score=0.589
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.585, ratio_lines=0.300, final_score=0.585
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.581, ratio_lines=0.293, final_score=0.581
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=33, match_len=9, line_score=0.578, ratio_lines=0.286, final_score=0.578
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=9, match_len=9, line_score=0.556, ratio_lines=0.556, final_score=0.657
+trace:         score_window: window_len=8, match_len=9, line_score=0.471, ratio_lines=0.471, final_score=0.471
+trace:         score_window: window_len=9, match_len=9, line_score=0.556, ratio_lines=0.556, final_score=0.611
+trace:         score_window: window_len=10, match_len=9, line_score=0.663, ratio_lines=0.632, final_score=0.781
+trace:         score_window: window_len=7, match_len=9, line_score=0.375, ratio_lines=0.375, final_score=0.375
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.267
+trace:         score_window: window_len=5, match_len=9, line_score=0.286, ratio_lines=0.286, final_score=0.286
+trace:         score_window: window_len=8, match_len=9, line_score=0.588, ratio_lines=0.588, final_score=0.655
+trace:         score_window: window_len=28, match_len=9, line_score=0.696, ratio_lines=0.378, final_score=0.696
+trace:         score_window: window_len=29, match_len=9, line_score=0.691, ratio_lines=0.368, final_score=0.691
+trace:         score_window: window_len=30, match_len=9, line_score=0.687, ratio_lines=0.359, final_score=0.687
+trace:         score_window: window_len=31, match_len=9, line_score=0.683, ratio_lines=0.350, final_score=0.683
+trace:         score_window: window_len=32, match_len=9, line_score=0.678, ratio_lines=0.341, final_score=0.678
+trace:         score_window: window_len=10, match_len=9, line_score=0.552, ratio_lines=0.526, final_score=0.572
+trace:         score_window: window_len=7, match_len=9, line_score=0.625, ratio_lines=0.625, final_score=0.708
+trace:         score_window: window_len=33, match_len=9, line_score=0.674, ratio_lines=0.333, final_score=0.674
+trace:         score_window: window_len=11, match_len=9, line_score=0.549, ratio_lines=0.500, final_score=0.549
+trace:         score_window: window_len=6, match_len=9, line_score=0.667, ratio_lines=0.667, final_score=0.747
+trace:         score_window: window_len=9, match_len=9, line_score=0.222, ratio_lines=0.222, final_score=0.276
+trace:         score_window: window_len=12, match_len=9, line_score=0.546, ratio_lines=0.476, final_score=0.546
+trace:         score_window: window_len=13, match_len=9, line_score=0.543, ratio_lines=0.455, final_score=0.543
+trace:         score_window: window_len=14, match_len=9, line_score=0.540, ratio_lines=0.435, final_score=0.540
+trace:         score_window: window_len=15, match_len=9, line_score=0.537, ratio_lines=0.417, final_score=0.537
+trace:         score_window: window_len=16, match_len=9, line_score=0.534, ratio_lines=0.400, final_score=0.534
+trace:         score_window: window_len=17, match_len=9, line_score=0.531, ratio_lines=0.385, final_score=0.531
+trace:         score_window: window_len=8, match_len=9, line_score=0.235, ratio_lines=0.235, final_score=0.295
+trace:         score_window: window_len=18, match_len=9, line_score=0.528, ratio_lines=0.370, final_score=0.528
+trace:         score_window: window_len=10, match_len=9, line_score=0.221, ratio_lines=0.211, final_score=0.259
+trace:         score_window: window_len=19, match_len=9, line_score=0.525, ratio_lines=0.357, final_score=0.525
+trace:         score_window: window_len=20, match_len=9, line_score=0.522, ratio_lines=0.345, final_score=0.522
+trace:         score_window: window_len=21, match_len=9, line_score=0.519, ratio_lines=0.333, final_score=0.519
+trace:         score_window: window_len=22, match_len=9, line_score=0.515, ratio_lines=0.323, final_score=0.515
+trace:         score_window: window_len=23, match_len=9, line_score=0.512, ratio_lines=0.312, final_score=0.512
+trace:         score_window: window_len=7, match_len=9, line_score=0.250, ratio_lines=0.250, final_score=0.322
+trace:         score_window: window_len=24, match_len=9, line_score=0.509, ratio_lines=0.303, final_score=0.509
+trace:         score_window: window_len=25, match_len=9, line_score=0.506, ratio_lines=0.294, final_score=0.506
+trace:         score_window: window_len=26, match_len=9, line_score=0.503, ratio_lines=0.286, final_score=0.503
+trace:         score_window: window_len=6, match_len=9, line_score=0.267, ratio_lines=0.267, final_score=0.346
+trace:         score_window: window_len=27, match_len=9, line_score=0.500, ratio_lines=0.278, final_score=0.500
+trace:         score_window: window_len=28, match_len=9, line_score=0.497, ratio_lines=0.270, final_score=0.497
+trace:         score_window: window_len=29, match_len=9, line_score=0.494, ratio_lines=0.263, final_score=0.494
+trace:         score_window: window_len=5, match_len=9, line_score=0.286, ratio_lines=0.286, final_score=0.380
+trace:         score_window: window_len=30, match_len=9, line_score=0.491, ratio_lines=0.256, final_score=0.491
+trace:         score_window: window_len=31, match_len=9, line_score=0.488, ratio_lines=0.250, final_score=0.488
+trace:         score_window: window_len=32, match_len=9, line_score=0.485, ratio_lines=0.244, final_score=0.485
+trace:         score_window: window_len=33, match_len=9, line_score=0.481, ratio_lines=0.238, final_score=0.481
+trace:         score_window: window_len=8, match_len=9, line_score=0.118, ratio_lines=0.118, final_score=0.156
+trace:         score_window: window_len=7, match_len=9, line_score=0.125, ratio_lines=0.125, final_score=0.168
+trace:         score_window: window_len=9, match_len=9, line_score=0.444, ratio_lines=0.444, final_score=0.554
+trace:         score_window: window_len=6, match_len=9, line_score=0.133, ratio_lines=0.133, final_score=0.182
+trace:         score_window: window_len=8, match_len=9, line_score=0.471, ratio_lines=0.471, final_score=0.589
+trace:         score_window: window_len=10, match_len=9, line_score=0.442, ratio_lines=0.421, final_score=0.503
+trace:         score_window: window_len=5, match_len=9, line_score=0.143, ratio_lines=0.143, final_score=0.198
+trace:         score_window: window_len=7, match_len=9, line_score=0.500, ratio_lines=0.500, final_score=0.638
+trace:         score_window: window_len=11, match_len=9, line_score=0.440, ratio_lines=0.400, final_score=0.474
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.392
+trace:         score_window: window_len=6, match_len=9, line_score=0.533, ratio_lines=0.533, final_score=0.698
+trace:         score_window: window_len=12, match_len=9, line_score=0.437, ratio_lines=0.381, final_score=0.448
+trace:         score_window: window_len=5, match_len=9, line_score=0.571, ratio_lines=0.571, final_score=0.705
+trace:         score_window: window_len=13, match_len=9, line_score=0.435, ratio_lines=0.364, final_score=0.435
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.426
+trace:         score_window: window_len=14, match_len=9, line_score=0.432, ratio_lines=0.348, final_score=0.432
+trace:         score_window: window_len=15, match_len=9, line_score=0.430, ratio_lines=0.333, final_score=0.430
+trace:         score_window: window_len=16, match_len=9, line_score=0.427, ratio_lines=0.320, final_score=0.427
+trace:         score_window: window_len=17, match_len=9, line_score=0.425, ratio_lines=0.308, final_score=0.425
+trace:         score_window: window_len=18, match_len=9, line_score=0.422, ratio_lines=0.296, final_score=0.422
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.444
+trace:         score_window: window_len=19, match_len=9, line_score=0.420, ratio_lines=0.286, final_score=0.420
+trace:         score_window: window_len=20, match_len=9, line_score=0.417, ratio_lines=0.276, final_score=0.417
+trace:         score_window: window_len=21, match_len=9, line_score=0.415, ratio_lines=0.267, final_score=0.415
+trace:         score_window: window_len=22, match_len=9, line_score=0.412, ratio_lines=0.258, final_score=0.412
+trace:         score_window: window_len=23, match_len=9, line_score=0.410, ratio_lines=0.250, final_score=0.410
+trace:         score_window: window_len=24, match_len=9, line_score=0.407, ratio_lines=0.242, final_score=0.407
+trace:         score_window: window_len=25, match_len=9, line_score=0.405, ratio_lines=0.235, final_score=0.405
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.452
+trace:         score_window: window_len=26, match_len=9, line_score=0.402, ratio_lines=0.229, final_score=0.402
+trace:         score_window: window_len=27, match_len=9, line_score=0.400, ratio_lines=0.222, final_score=0.400
+trace:         score_window: window_len=28, match_len=9, line_score=0.398, ratio_lines=0.216, final_score=0.398
+trace:         score_window: window_len=29, match_len=9, line_score=0.395, ratio_lines=0.211, final_score=0.395
+trace:         score_window: window_len=9, match_len=9, line_score=0.333, ratio_lines=0.333, final_score=0.406
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.484
+trace:         score_window: window_len=8, match_len=9, line_score=0.353, ratio_lines=0.353, final_score=0.446
+trace:         score_window: window_len=10, match_len=9, line_score=0.331, ratio_lines=0.316, final_score=0.381
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.520
+trace:         score_window: window_len=7, match_len=9, line_score=0.375, ratio_lines=0.375, final_score=0.476
+trace:         score_window: window_len=11, match_len=9, line_score=0.330, ratio_lines=0.300, final_score=0.359
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.548
+trace:         score_window: window_len=6, match_len=9, line_score=0.400, ratio_lines=0.400, final_score=0.519
+trace:         score_window: window_len=12, match_len=9, line_score=0.328, ratio_lines=0.286, final_score=0.339
+trace:         score_window: window_len=5, match_len=9, line_score=0.429, ratio_lines=0.429, final_score=0.573
+trace:         score_window: window_len=13, match_len=9, line_score=0.326, ratio_lines=0.273, final_score=0.326
+trace:         score_window: window_len=14, match_len=9, line_score=0.324, ratio_lines=0.261, final_score=0.324
+trace:         score_window: window_len=15, match_len=9, line_score=0.322, ratio_lines=0.250, final_score=0.322
+trace:         score_window: window_len=16, match_len=9, line_score=0.320, ratio_lines=0.240, final_score=0.320
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.378
+trace:         score_window: window_len=17, match_len=9, line_score=0.319, ratio_lines=0.231, final_score=0.319
+trace:         score_window: window_len=18, match_len=9, line_score=0.317, ratio_lines=0.222, final_score=0.317
+trace:         score_window: window_len=19, match_len=9, line_score=0.315, ratio_lines=0.214, final_score=0.315
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.407
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.372
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.438
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.392
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.474
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.548
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.363
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.591
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.392
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.426
+trace:         score_window: window_len=8, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.363
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.444
+trace:         score_window: window_len=7, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.404
+trace:         score_window: window_len=6, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.426
+trace:         score_window: window_len=5, match_len=9, line_score=0.000, ratio_lines=0.000, final_score=0.593
+debug:       compute_scored_windows (parallel) complete: scored 1392 window(s). Best candidate score=0.875 at line 91 (len=7).
+trace:       Top fuzzy match candidates:
+trace:         - Index 90, Len 7: Score 0.875 (Ratio 0.875) | Content: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:         - Index 89, Len 8: Score 0.824 (Ratio 0.824) | Content: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:         - Index 90, Len 8: Score 0.824 (Ratio 0.824) | Content: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:         - Index 90, Len 6: Score 0.800 (Ratio 0.800) | Content: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:         - Index 91, Len 6: Score 0.800 (Ratio 0.800) | Content: ["NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:         New best score: 0.222 (ratio 0.222 [l:0.222,w:0.165]) at index 72 (window len 9)
+trace:         New best score: 0.235 (ratio 0.235 [l:0.235,w:0.133]) at index 72 (window len 8)
+trace:         New best score: 0.633 (ratio 0.633 [l:0.143,w:0.000]) at index 72 (window len 5)
+trace:         New best score: 0.677 (ratio 0.677 [l:0.154,w:0.000]) at index 72 (window len 17)
+trace:         New best score: 0.690 (ratio 0.690 [l:0.200,w:0.000]) at index 72 (window len 21)
+trace:         New best score: 0.709 (ratio 0.709 [l:0.412,w:0.709]) at index 72 (window len 25)
+trace:         New best score: 0.713 (ratio 0.713 [l:0.424,w:0.713]) at index 73 (window len 24)
+trace:         New best score: 0.717 (ratio 0.717 [l:0.438,w:0.717]) at index 74 (window len 23)
+trace:         New best score: 0.722 (ratio 0.722 [l:0.452,w:0.722]) at index 75 (window len 22)
+trace:         New best score: 0.726 (ratio 0.726 [l:0.467,w:0.726]) at index 76 (window len 21)
+trace:         New best score: 0.730 (ratio 0.730 [l:0.483,w:0.730]) at index 77 (window len 20)
+trace:         New best score: 0.735 (ratio 0.735 [l:0.500,w:0.735]) at index 78 (window len 19)
+trace:         New best score: 0.739 (ratio 0.739 [l:0.519,w:0.739]) at index 79 (window len 18)
+trace:         New best score: 0.743 (ratio 0.743 [l:0.538,w:0.743]) at index 80 (window len 17)
+trace:         New best score: 0.748 (ratio 0.748 [l:0.560,w:0.748]) at index 81 (window len 16)
+trace:         New best score: 0.752 (ratio 0.752 [l:0.583,w:0.752]) at index 82 (window len 15)
+trace:         New best score: 0.756 (ratio 0.756 [l:0.609,w:0.756]) at index 83 (window len 14)
+trace:         New best score: 0.760 (ratio 0.760 [l:0.636,w:0.760]) at index 84 (window len 13)
+trace:         New best score: 0.771 (ratio 0.771 [l:0.600,w:0.623]) at index 85 (window len 11)
+trace:         New best score: 0.781 (ratio 0.781 [l:0.632,w:0.632]) at index 86 (window len 10)
+trace:         New best score: 0.785 (ratio 0.785 [l:0.667,w:0.640]) at index 87 (window len 9)
+trace:         New best score: 0.824 (ratio 0.824 [l:0.824,w:0.824]) at index 89 (window len 8)
+trace:         Tie in score (0.824) and ratio (0.824). Adding candidate: index 90, len 8
+trace:         New best score: 0.875 (ratio 0.875 [l:0.875,w:0.875]) at index 90 (window len 7)
+debug:     Strategy 3 (Fuzzy): 245 window(s) met threshold 0.70
+trace:       Top 3 passing candidates: [("0.875", 91, 7), ("0.824", 90, 8), ("0.824", 91, 8)]
+debug:     Top fuzzy candidate: start line 91 (len=7, score=0.875)
+trace:       Adding candidate location at line 90 (len=8, score=0.824)
+trace:       Adding candidate location at line 91 (len=8, score=0.824)
+trace:       Adding candidate location at line 91 (len=6, score=0.800)
+trace:       Adding candidate location at line 92 (len=6, score=0.800)
+trace:       Adding candidate location at line 88 (len=9, score=0.785)
+trace:       Adding candidate location at line 87 (len=10, score=0.781)
+trace:       Adding candidate location at line 89 (len=9, score=0.778)
+trace:       Adding candidate location at line 90 (len=9, score=0.778)
+trace:       Adding candidate location at line 91 (len=9, score=0.778)
+trace:       Adding candidate location at line 88 (len=10, score=0.773)
+trace:       Adding candidate location at line 89 (len=10, score=0.773)
+trace:       Adding candidate location at line 90 (len=10, score=0.773)
+trace:       Adding candidate location at line 91 (len=10, score=0.773)
+trace:       Adding candidate location at line 86 (len=11, score=0.771)
+trace:       Adding candidate location at line 87 (len=11, score=0.769)
+trace:       Adding candidate location at line 88 (len=11, score=0.769)
+trace:       Adding candidate location at line 89 (len=11, score=0.769)
+trace:       Adding candidate location at line 90 (len=11, score=0.769)
+trace:       Adding candidate location at line 86 (len=12, score=0.765)
+trace:       Reached maximum candidate limit (20), stopping candidate collection
+debug:     Strategy 3 (Fuzzy): selected 20 candidate location(s)
+trace:   Pruned candidates by min_span 5: 20 -> 20 candidate(s)
+trace: DefaultHunkFinder::find_candidate_locations: returning 20 candidate(s)
+debug:   Found 20 candidate location(s) for hunk. Testing sequentially...
+trace:   Evaluating candidate 1/20 at location HunkLocation { start_index: 90, length: 7 } (match_type: Fuzzy { score: 0.875 })
+debug:   Found location HunkLocation { start_index: 90, length: 7 } with match type Fuzzy { score: 0.875 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 7), match_type=Fuzzy { score: 0.875 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=7
+trace:       File content in matched range (7 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.875
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 1/20 at HunkLocation { start_index: 90, length: 7 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 2/20 at location HunkLocation { start_index: 89, length: 8 } (match_type: Fuzzy { score: 0.8235294222831726 })
+debug:   Found location HunkLocation { start_index: 89, length: 8 } with match type Fuzzy { score: 0.8235294222831726 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 90 (length 8), match_type=Fuzzy { score: 0.8235294222831726 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=89, len=8
+trace:       File content in matched range (8 line(s)): ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.824
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 2/20 at HunkLocation { start_index: 89, length: 8 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 3/20 at location HunkLocation { start_index: 90, length: 8 } (match_type: Fuzzy { score: 0.8235294222831726 })
+debug:   Found location HunkLocation { start_index: 90, length: 8 } with match type Fuzzy { score: 0.8235294222831726 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 8), match_type=Fuzzy { score: 0.8235294222831726 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=8
+trace:       File content in matched range (8 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.824
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 7..8 (len=1)
+trace:         Multi-line replacement (hunk_len=2, target_len=1). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 1 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+debug:   Candidate 3/20 at HunkLocation { start_index: 90, length: 8 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 4/20 at location HunkLocation { start_index: 90, length: 6 } (match_type: Fuzzy { score: 0.800000011920929 })
+debug:   Found location HunkLocation { start_index: 90, length: 6 } with match type Fuzzy { score: 0.800000011920929 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 6), match_type=Fuzzy { score: 0.800000011920929 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=6
+trace:       File content in matched range (6 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.800
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       DiffOp::Delete: 3 line(s) missing from target file (hunk old_idx=6)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 4/20 at HunkLocation { start_index: 90, length: 6 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 5/20 at location HunkLocation { start_index: 91, length: 6 } (match_type: Fuzzy { score: 0.800000011920929 })
+debug:   Found location HunkLocation { start_index: 91, length: 6 } with match type Fuzzy { score: 0.800000011920929 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 92 (length 6), match_type=Fuzzy { score: 0.800000011920929 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=91, len=6
+trace:       File content in matched range (6 line(s)): ["NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.800
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Delete: 1 line(s) missing from target file (hunk old_idx=0)
+trace:         Skipping stale context line missing in target: ""
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=1, file new_idx=0)
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 5/20 at HunkLocation { start_index: 91, length: 6 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 6/20 at location HunkLocation { start_index: 87, length: 9 } (match_type: Fuzzy { score: 0.7845654904842376 })
+debug:   Found location HunkLocation { start_index: 87, length: 9 } with match type Fuzzy { score: 0.7845654904842376 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 88 (length 9), match_type=Fuzzy { score: 0.7845654904842376 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=87, len=9
+trace:       File content in matched range (9 line(s)): ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.667
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 3 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=0, file new_idx=3)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       DiffOp::Delete: 3 line(s) missing from target file (hunk old_idx=6)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 6/20 at HunkLocation { start_index: 87, length: 9 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 7/20 at location HunkLocation { start_index: 86, length: 10 } (match_type: Fuzzy { score: 0.7810567140579223 })
+debug:   Found location HunkLocation { start_index: 86, length: 10 } with match type Fuzzy { score: 0.7810567140579223 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 87 (length 10), match_type=Fuzzy { score: 0.7810567140579223 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=86, len=10
+trace:       File content in matched range (10 line(s)): ["", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 4 operation(s), similarity ratio=0.632
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 1 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:       DiffOp::Insert: preserving 4 local insertion line(s) from target file (new_idx=1)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: ''
+trace:       DiffOp::Equal: 5 line(s) aligned (hunk old_idx=1, file new_idx=5)
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       DiffOp::Delete: 3 line(s) missing from target file (hunk old_idx=6)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 7/20 at HunkLocation { start_index: 86, length: 10 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 8/20 at location HunkLocation { start_index: 88, length: 9 } (match_type: Fuzzy { score: 0.7777777910232544 })
+debug:   Found location HunkLocation { start_index: 88, length: 9 } with match type Fuzzy { score: 0.7777777910232544 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 89 (length 9), match_type=Fuzzy { score: 0.7777777910232544 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=88, len=9
+trace:       File content in matched range (9 line(s)): ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.778
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 2 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=2)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 8/20 at HunkLocation { start_index: 88, length: 9 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 9/20 at location HunkLocation { start_index: 89, length: 9 } (match_type: Fuzzy { score: 0.7777777910232544 })
+debug:   Found location HunkLocation { start_index: 89, length: 9 } with match type Fuzzy { score: 0.7777777910232544 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 90 (length 9), match_type=Fuzzy { score: 0.7777777910232544 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=89, len=9
+trace:       File content in matched range (9 line(s)): ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.778
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 8..9 (len=1)
+trace:         Multi-line replacement (hunk_len=2, target_len=1). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 1 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+debug:   Candidate 9/20 at HunkLocation { start_index: 89, length: 9 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 10/20 at location HunkLocation { start_index: 90, length: 9 } (match_type: Fuzzy { score: 0.7777777910232544 })
+debug:   Found location HunkLocation { start_index: 90, length: 9 } with match type Fuzzy { score: 0.7777777910232544 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 9), match_type=Fuzzy { score: 0.7777777910232544 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=9
+trace:       File content in matched range (9 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.778
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 7..9 (len=2)
+trace:         1-to-1 length replacement. Validating similarity of modified lines...
+trace:         1-to-1 replacement line validation [line 7]: is_removal=true, word_sim=0.000, char_sim=0.000
+warning:     Fuzzy match rejected: Removal line "- " differs from target line "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once" (sim_words=0.000, sim_chars=0.000, required=0.500).
+debug:   Candidate 10/20 at HunkLocation { start_index: 90, length: 9 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 11/20 at location HunkLocation { start_index: 87, length: 10 } (match_type: Fuzzy { score: 0.7734567802445388 })
+debug:   Found location HunkLocation { start_index: 87, length: 10 } with match type Fuzzy { score: 0.7734567802445388 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 88 (length 10), match_type=Fuzzy { score: 0.7734567802445388 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=87, len=10
+trace:       File content in matched range (10 line(s)): ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.737
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 3 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=3)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 11/20 at HunkLocation { start_index: 87, length: 10 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 12/20 at location HunkLocation { start_index: 88, length: 10 } (match_type: Fuzzy { score: 0.7734567802445388 })
+debug:   Found location HunkLocation { start_index: 88, length: 10 } with match type Fuzzy { score: 0.7734567802445388 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 89 (length 10), match_type=Fuzzy { score: 0.7734567802445388 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=88, len=10
+trace:       File content in matched range (10 line(s)): ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.737
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 2 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=2)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 9..10 (len=1)
+trace:         Multi-line replacement (hunk_len=2, target_len=1). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 1 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+debug:   Candidate 12/20 at HunkLocation { start_index: 88, length: 10 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 13/20 at location HunkLocation { start_index: 89, length: 10 } (match_type: Fuzzy { score: 0.7734567802445388 })
+debug:   Found location HunkLocation { start_index: 89, length: 10 } with match type Fuzzy { score: 0.7734567802445388 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 90 (length 10), match_type=Fuzzy { score: 0.7734567802445388 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=89, len=10
+trace:       File content in matched range (10 line(s)): ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.737
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 8..10 (len=2)
+trace:         1-to-1 length replacement. Validating similarity of modified lines...
+trace:         1-to-1 replacement line validation [line 7]: is_removal=true, word_sim=0.000, char_sim=0.000
+warning:     Fuzzy match rejected: Removal line "- " differs from target line "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once" (sim_words=0.000, sim_chars=0.000, required=0.500).
+debug:   Candidate 13/20 at HunkLocation { start_index: 89, length: 10 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 14/20 at location HunkLocation { start_index: 90, length: 10 } (match_type: Fuzzy { score: 0.7734567802445388 })
+debug:   Found location HunkLocation { start_index: 90, length: 10 } with match type Fuzzy { score: 0.7734567802445388 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 10), match_type=Fuzzy { score: 0.7734567802445388 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=10
+trace:       File content in matched range (10 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.737
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 7..10 (len=3)
+trace:         Multi-line replacement (hunk_len=2, target_len=3). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 3 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:   find_statement_match_in_block: comparing target line 2 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:   find_statement_match_in_block: comparing target line 3 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+debug:   Candidate 14/20 at HunkLocation { start_index: 90, length: 10 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 15/20 at location HunkLocation { start_index: 85, length: 11 } (match_type: Fuzzy { score: 0.7709826409816742 })
+debug:   Found location HunkLocation { start_index: 85, length: 11 } with match type Fuzzy { score: 0.7709826409816742 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 86 (length 11), match_type=Fuzzy { score: 0.7709826409816742 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["endif", "", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=85, len=11
+trace:       File content in matched range (11 line(s)): ["endif", "", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.600
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 5 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: 'endif'
+trace:         Preserving inserted line: ''
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=0, file new_idx=5)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       DiffOp::Delete: 3 line(s) missing from target file (hunk old_idx=6)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 15/20 at HunkLocation { start_index: 85, length: 11 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 16/20 at location HunkLocation { start_index: 86, length: 11 } (match_type: Fuzzy { score: 0.7691357893708312 })
+debug:   Found location HunkLocation { start_index: 86, length: 11 } with match type Fuzzy { score: 0.7691357893708312 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 87 (length 11), match_type=Fuzzy { score: 0.7691357893708312 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=86, len=11
+trace:       File content in matched range (11 line(s)): ["", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 4 operation(s), similarity ratio=0.700
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 1 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:       DiffOp::Insert: preserving 4 local insertion line(s) from target file (new_idx=1)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: ''
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=1, file new_idx=5)
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 16/20 at HunkLocation { start_index: 86, length: 11 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 17/20 at location HunkLocation { start_index: 87, length: 11 } (match_type: Fuzzy { score: 0.7691357893708312 })
+debug:   Found location HunkLocation { start_index: 87, length: 11 } with match type Fuzzy { score: 0.7691357893708312 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 88 (length 11), match_type=Fuzzy { score: 0.7691357893708312 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=87, len=11
+trace:       File content in matched range (11 line(s)): ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.700
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 3 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=3)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 10..11 (len=1)
+trace:         Multi-line replacement (hunk_len=2, target_len=1). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 1 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+debug:   Candidate 17/20 at HunkLocation { start_index: 87, length: 11 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 18/20 at location HunkLocation { start_index: 88, length: 11 } (match_type: Fuzzy { score: 0.7691357893708312 })
+debug:   Found location HunkLocation { start_index: 88, length: 11 } with match type Fuzzy { score: 0.7691357893708312 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 89 (length 11), match_type=Fuzzy { score: 0.7691357893708312 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=88, len=11
+trace:       File content in matched range (11 line(s)): ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.700
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 2 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=2)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 9..11 (len=2)
+trace:         1-to-1 length replacement. Validating similarity of modified lines...
+trace:         1-to-1 replacement line validation [line 7]: is_removal=true, word_sim=0.000, char_sim=0.000
+warning:     Fuzzy match rejected: Removal line "- " differs from target line "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once" (sim_words=0.000, sim_chars=0.000, required=0.500).
+debug:   Candidate 18/20 at HunkLocation { start_index: 88, length: 11 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 19/20 at location HunkLocation { start_index: 89, length: 11 } (match_type: Fuzzy { score: 0.7691357893708312 })
+debug:   Found location HunkLocation { start_index: 89, length: 11 } with match type Fuzzy { score: 0.7691357893708312 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 90 (length 11), match_type=Fuzzy { score: 0.7691357893708312 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=89, len=11
+trace:       File content in matched range (11 line(s)): ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.700
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 8..11 (len=3)
+trace:         Multi-line replacement (hunk_len=2, target_len=3). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 3 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:   find_statement_match_in_block: comparing target line 2 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:   find_statement_match_in_block: comparing target line 3 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+debug:   Candidate 19/20 at HunkLocation { start_index: 89, length: 11 } failed with ContextNotFound. Backtracking...
+trace:   Evaluating candidate 20/20 at location HunkLocation { start_index: 85, length: 12 } (match_type: Fuzzy { score: 0.7648148376080725 })
+debug:   Found location HunkLocation { start_index: 85, length: 12 } with match type Fuzzy { score: 0.7648148376080725 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 86 (length 12), match_type=Fuzzy { score: 0.7648148376080725 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["endif", "", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=85, len=12
+trace:       File content in matched range (12 line(s)): ["endif", "", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:       Computed diff between match block and file slice: 5 operation(s), similarity ratio=0.667
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: 'endif'
+trace:       DiffOp::Equal: 1 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:       DiffOp::Insert: preserving 4 local insertion line(s) from target file (new_idx=2)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: ''
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=1, file new_idx=6)
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+debug:   Candidate 20/20 at HunkLocation { start_index: 85, length: 12 } failed with ContextNotFound. Backtracking...
+debug:   Strict application failed for all 20 candidate(s). Retrying with fallback context reconciliation...
+trace:   Evaluating candidate 1/20 with lenient reconciliation at location HunkLocation { start_index: 90, length: 7 }
+debug:   Found location HunkLocation { start_index: 90, length: 7 } with match type Fuzzy { score: 0.875 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 7), match_type=Fuzzy { score: 0.875 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=7
+trace:       File content in matched range (7 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.875
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 2/20 with lenient reconciliation at location HunkLocation { start_index: 89, length: 8 }
+debug:   Found location HunkLocation { start_index: 89, length: 8 } with match type Fuzzy { score: 0.8235294222831726 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 90 (length 8), match_type=Fuzzy { score: 0.8235294222831726 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=89, len=8
+trace:       File content in matched range (8 line(s)): ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.824
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 3/20 with lenient reconciliation at location HunkLocation { start_index: 90, length: 8 }
+debug:   Found location HunkLocation { start_index: 90, length: 8 } with match type Fuzzy { score: 0.8235294222831726 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 8), match_type=Fuzzy { score: 0.8235294222831726 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=8
+trace:       File content in matched range (8 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.824
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 7..8 (len=1)
+trace:         Multi-line replacement (hunk_len=2, target_len=1). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 1 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+trace:   Evaluating candidate 4/20 with lenient reconciliation at location HunkLocation { start_index: 90, length: 6 }
+debug:   Found location HunkLocation { start_index: 90, length: 6 } with match type Fuzzy { score: 0.800000011920929 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 6), match_type=Fuzzy { score: 0.800000011920929 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=6
+trace:       File content in matched range (6 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.800
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       DiffOp::Delete: 3 line(s) missing from target file (hunk old_idx=6)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 5/20 with lenient reconciliation at location HunkLocation { start_index: 91, length: 6 }
+debug:   Found location HunkLocation { start_index: 91, length: 6 } with match type Fuzzy { score: 0.800000011920929 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 92 (length 6), match_type=Fuzzy { score: 0.800000011920929 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=91, len=6
+trace:       File content in matched range (6 line(s)): ["NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.800
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Delete: 1 line(s) missing from target file (hunk old_idx=0)
+trace:         Skipping stale context line missing in target: ""
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=1, file new_idx=0)
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 6/20 with lenient reconciliation at location HunkLocation { start_index: 87, length: 9 }
+debug:   Found location HunkLocation { start_index: 87, length: 9 } with match type Fuzzy { score: 0.7845654904842376 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 88 (length 9), match_type=Fuzzy { score: 0.7845654904842376 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=87, len=9
+trace:       File content in matched range (9 line(s)): ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.667
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 3 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=0, file new_idx=3)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       DiffOp::Delete: 3 line(s) missing from target file (hunk old_idx=6)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 7/20 with lenient reconciliation at location HunkLocation { start_index: 86, length: 10 }
+debug:   Found location HunkLocation { start_index: 86, length: 10 } with match type Fuzzy { score: 0.7810567140579223 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 87 (length 10), match_type=Fuzzy { score: 0.7810567140579223 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=86, len=10
+trace:       File content in matched range (10 line(s)): ["", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       Computed diff between match block and file slice: 4 operation(s), similarity ratio=0.632
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 1 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:       DiffOp::Insert: preserving 4 local insertion line(s) from target file (new_idx=1)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: ''
+trace:       DiffOp::Equal: 5 line(s) aligned (hunk old_idx=1, file new_idx=5)
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       DiffOp::Delete: 3 line(s) missing from target file (hunk old_idx=6)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 8/20 with lenient reconciliation at location HunkLocation { start_index: 88, length: 9 }
+debug:   Found location HunkLocation { start_index: 88, length: 9 } with match type Fuzzy { score: 0.7777777910232544 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 89 (length 9), match_type=Fuzzy { score: 0.7777777910232544 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=88, len=9
+trace:       File content in matched range (9 line(s)): ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.778
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 2 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=2)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 9/20 with lenient reconciliation at location HunkLocation { start_index: 89, length: 9 }
+debug:   Found location HunkLocation { start_index: 89, length: 9 } with match type Fuzzy { score: 0.7777777910232544 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 90 (length 9), match_type=Fuzzy { score: 0.7777777910232544 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=89, len=9
+trace:       File content in matched range (9 line(s)): ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.778
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 8..9 (len=1)
+trace:         Multi-line replacement (hunk_len=2, target_len=1). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 1 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+trace:   Evaluating candidate 10/20 with lenient reconciliation at location HunkLocation { start_index: 90, length: 9 }
+debug:   Found location HunkLocation { start_index: 90, length: 9 } with match type Fuzzy { score: 0.7777777910232544 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 9), match_type=Fuzzy { score: 0.7777777910232544 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=9
+trace:       File content in matched range (9 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.778
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 7..9 (len=2)
+trace:         1-to-1 length replacement. Validating similarity of modified lines...
+trace:         1-to-1 replacement line validation [line 7]: is_removal=true, word_sim=0.000, char_sim=0.000
+trace: normalize_line_delimiters: '-' -> '-'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+warning:     Fuzzy match rejected: Removal line "- " differs from target line "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once" (sim_words=0.000, sim_chars=0.000, required=0.350).
+trace:   Evaluating candidate 11/20 with lenient reconciliation at location HunkLocation { start_index: 87, length: 10 }
+debug:   Found location HunkLocation { start_index: 87, length: 10 } with match type Fuzzy { score: 0.7734567802445388 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 88 (length 10), match_type=Fuzzy { score: 0.7734567802445388 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=87, len=10
+trace:       File content in matched range (10 line(s)): ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.737
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 3 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=3)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 12/20 with lenient reconciliation at location HunkLocation { start_index: 88, length: 10 }
+debug:   Found location HunkLocation { start_index: 88, length: 10 } with match type Fuzzy { score: 0.7734567802445388 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 89 (length 10), match_type=Fuzzy { score: 0.7734567802445388 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=88, len=10
+trace:       File content in matched range (10 line(s)): ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.737
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 2 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=2)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 9..10 (len=1)
+trace:         Multi-line replacement (hunk_len=2, target_len=1). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 1 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+trace:   Evaluating candidate 13/20 with lenient reconciliation at location HunkLocation { start_index: 89, length: 10 }
+debug:   Found location HunkLocation { start_index: 89, length: 10 } with match type Fuzzy { score: 0.7734567802445388 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 90 (length 10), match_type=Fuzzy { score: 0.7734567802445388 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=89, len=10
+trace:       File content in matched range (10 line(s)): ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.737
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 8..10 (len=2)
+trace:         1-to-1 length replacement. Validating similarity of modified lines...
+trace:         1-to-1 replacement line validation [line 7]: is_removal=true, word_sim=0.000, char_sim=0.000
+trace: normalize_line_delimiters: '-' -> '-'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+warning:     Fuzzy match rejected: Removal line "- " differs from target line "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once" (sim_words=0.000, sim_chars=0.000, required=0.350).
+trace:   Evaluating candidate 14/20 with lenient reconciliation at location HunkLocation { start_index: 90, length: 10 }
+debug:   Found location HunkLocation { start_index: 90, length: 10 } with match type Fuzzy { score: 0.7734567802445388 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 91 (length 10), match_type=Fuzzy { score: 0.7734567802445388 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=90, len=10
+trace:       File content in matched range (10 line(s)): ["", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending'
+trace:       Computed diff between match block and file slice: 2 operation(s), similarity ratio=0.737
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 7..10 (len=3)
+trace:         Multi-line replacement (hunk_len=2, target_len=3). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 3 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:   find_statement_match_in_block: comparing target line 2 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:   find_statement_match_in_block: comparing target line 3 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+trace:   Evaluating candidate 15/20 with lenient reconciliation at location HunkLocation { start_index: 85, length: 11 }
+debug:   Found location HunkLocation { start_index: 85, length: 11 } with match type Fuzzy { score: 0.7709826409816742 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 86 (length 11), match_type=Fuzzy { score: 0.7709826409816742 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["endif", "", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=85, len=11
+trace:       File content in matched range (11 line(s)): ["endif", "", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: 'endif' -> 'endif'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.600
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 5 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: 'endif'
+trace:         Preserving inserted line: ''
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=0, file new_idx=5)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:       DiffOp::Delete: 3 line(s) missing from target file (hunk old_idx=6)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 16/20 with lenient reconciliation at location HunkLocation { start_index: 86, length: 11 }
+debug:   Found location HunkLocation { start_index: 86, length: 11 } with match type Fuzzy { score: 0.7691357893708312 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 87 (length 11), match_type=Fuzzy { score: 0.7691357893708312 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=86, len=11
+trace:       File content in matched range (11 line(s)): ["", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       Computed diff between match block and file slice: 4 operation(s), similarity ratio=0.700
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Equal: 1 line(s) aligned (hunk old_idx=0, file new_idx=0)
+trace:         Equal: preserving target line: ''
+trace:       DiffOp::Insert: preserving 4 local insertion line(s) from target file (new_idx=1)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: ''
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=1, file new_idx=5)
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+trace:   Evaluating candidate 17/20 with lenient reconciliation at location HunkLocation { start_index: 87, length: 11 }
+debug:   Found location HunkLocation { start_index: 87, length: 11 } with match type Fuzzy { score: 0.7691357893708312 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 88 (length 11), match_type=Fuzzy { score: 0.7691357893708312 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=87, len=11
+trace:       File content in matched range (11 line(s)): ["#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.700
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 3 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=3)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 10..11 (len=1)
+trace:         Multi-line replacement (hunk_len=2, target_len=1). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 1 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+trace:   Evaluating candidate 18/20 with lenient reconciliation at location HunkLocation { start_index: 88, length: 11 }
+debug:   Found location HunkLocation { start_index: 88, length: 11 } with match type Fuzzy { score: 0.7691357893708312 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 89 (length 11), match_type=Fuzzy { score: 0.7691357893708312 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=88, len=11
+trace:       File content in matched range (11 line(s)): ["# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.700
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 2 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=2)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 9..11 (len=2)
+trace:         1-to-1 length replacement. Validating similarity of modified lines...
+trace:         1-to-1 replacement line validation [line 7]: is_removal=true, word_sim=0.000, char_sim=0.000
+trace: normalize_line_delimiters: '-' -> '-'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+warning:     Fuzzy match rejected: Removal line "- " differs from target line "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once" (sim_words=0.000, sim_chars=0.000, required=0.350).
+trace:   Evaluating candidate 19/20 with lenient reconciliation at location HunkLocation { start_index: 89, length: 11 }
+debug:   Found location HunkLocation { start_index: 89, length: 11 } with match type Fuzzy { score: 0.7691357893708312 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 90 (length 11), match_type=Fuzzy { score: 0.7691357893708312 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=89, len=11
+trace:       File content in matched range (11 line(s)): ["#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending'
+trace:       Computed diff between match block and file slice: 3 operation(s), similarity ratio=0.700
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: '#'
+trace:       DiffOp::Equal: 7 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Replace: hunk lines 7..9 (len=2) vs file lines 8..11 (len=3)
+trace:         Multi-line replacement (hunk_len=2, target_len=3). Searching for statement alignment across line breaks...
+trace: find_statement_match_in_block: attempting statement alignment for 2 line(s) against 3 target line(s)
+trace:   find_statement_match_in_block: comparing target line 1 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += address_space_init_once'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:   find_statement_match_in_block: comparing target line 2 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += kbasename'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:   find_statement_match_in_block: comparing target line 3 ('NV_CONFTEST_FUNCTION_COMPILE_TESTS += fatal_signal_pending'): word_ratio=0.000, char_ratio=0.000, combined=0.000
+trace:         No single statement alignment found (has_context=true). Using block fallback heuristic.
+warning:     Fuzzy match rejected: Tail context is unaligned in replacement block.
+trace:   Evaluating candidate 20/20 with lenient reconciliation at location HunkLocation { start_index: 85, length: 12 }
+debug:   Found location HunkLocation { start_index: 85, length: 12 } with match type Fuzzy { score: 0.7648148376080725 }. Applying changes.
+debug:   try_apply_hunk_at_location: target line 86 (length 12), match_type=Fuzzy { score: 0.7648148376080725 }, total target lines=138.
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace:     Match block lines: 9 | Total hunk lines: 10
+trace:     Target slice to replace: ["endif", "", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:     Ellipsis flags: has_ellipsis=false, is_literal_match=false, is_wildcard_gap_match=false
+debug:     Applying hunk via robust reconstruction logic (preserving file context & adjusting indent).
+trace:       Fuzzy match location: start=85, len=12
+trace:       File content in matched range (12 line(s)): ["endif", "", "#", "# Register the conftests needed by nvidia-uvm.ko", "#", "", "NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)", "", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page", "NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create"]
+trace:       Parsed hunk: 9 match line(s), 0 initial addition(s).
+trace: Hunk::get_match_block: extracted 9 match line(s)
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace: normalize_line_delimiters: '- ' -> '-'
+trace: normalize_line_delimiters: '2.20.1' -> '2.20.1'
+trace: normalize_line_delimiters: 'endif' -> 'endif'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '# Register the conftests needed by nvidia-uvm.ko' -> '# Register the conftests needed by nvidia-uvm.ko'
+trace: normalize_line_delimiters: '#' -> '#'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)' -> 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace: normalize_line_delimiters: '' -> ''
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace: normalize_line_delimiters: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create' -> 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       Computed diff between match block and file slice: 5 operation(s), similarity ratio=0.667
+trace:       Active baseline indentation: hunk='', target=''
+trace:       DiffOp::Insert: preserving 1 local insertion line(s) from target file (new_idx=0)
+trace:         Preserving inserted line: 'endif'
+trace:       DiffOp::Equal: 1 line(s) aligned (hunk old_idx=0, file new_idx=1)
+trace:         Equal: preserving target line: ''
+trace:       DiffOp::Insert: preserving 4 local insertion line(s) from target file (new_idx=2)
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: '# Register the conftests needed by nvidia-uvm.ko'
+trace:         Preserving inserted line: '#'
+trace:         Preserving inserted line: ''
+trace:       DiffOp::Equal: 6 line(s) aligned (hunk old_idx=1, file new_idx=6)
+trace:         Equal: preserving target line: 'NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)'
+trace:         Equal: preserving target line: ''
+trace:         Equal: removing target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Appended 1 addition(s) after line 3
+trace:         Equal: applying addition: '#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page'
+trace:         Equal: preserving target line: 'NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create'
+trace:       DiffOp::Delete: 2 line(s) missing from target file (hunk old_idx=7)
+warning:     Fuzzy match rejected: Tail context line(s) missing from target file.
+warning:   All 20 candidate location(s) exhausted. Hunk application failed with: Context not found
+debug:   HunkApplier: hunk 1 application outcome: Failed(ContextNotFound)
+  Applying Hunk 1/1...
+warning:   Failed to apply Hunk 1. Context not found
+debug: HunkApplier::into_content: assembling final content from 138 line(s) (touched_eof=false, patch_ends_with_newline=true, original_ends_with_newline=true)
+trace: HunkApplier::into_content: resulting content has 5345 bytes (138 lines, ends_with_newline=true)
+  DRY RUN: Evaluated changes for 'nvidia-uvm/nvidia-uvm.Kbuild' (1 hunks, clean=false)
+trace:   Generating diff for dry run...
+debug: apply_patches_to_dir: completed 1 patch(es). all_succeeded=true, all_applied_cleanly=false
+
+>>> Operation 1/1
+error: --- FAILED to apply patch for: nvidia-uvm/nvidia-uvm.Kbuild
+warning:   - Hunk 1 failed: Context not found
+warning:     Failed Hunk Content:
+warning:        
+warning:        NV_OBJECTS_DEPEND_ON_CONFTEST += $(NVIDIA_UVM_OBJECTS)
+warning:        
+warning:       -NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range
+warning:       +#NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_page_range
+warning:        NV_CONFTEST_FUNCTION_COMPILE_TESTS += remap_pfn_range
+warning:        NV_CONFTEST_FUNCTION_COMPILE_TESTS += vm_insert_page
+warning:        NV_CONFTEST_FUNCTION_COMPILE_TESTS += kmem_cache_create
+warning:       -- 
+warning:        2.20.1
+
+--- Summary ---
+Successful operations: 0
+Failed operations:     1
+DRY RUN completed. No files were modified.
+warning: Review the log for errors. Some files may be in a partially patched state.
+````
+
+## Final Target File(s)
+
+> This section shows the state of the target files *after* the patch operation was attempted.
+
+*Final file state is the same as the original state because `--dry-run` was active.*
+
+## Discrepancy Check
+
+> This section verifies that applying the patch and then creating a new diff from the result reproduces the original input patch. This is a key integrity check.
+
+*Discrepancy check was skipped because `--dry-run` was active.*
