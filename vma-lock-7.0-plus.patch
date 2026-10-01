@@ -1,5 +1,5 @@
---- a/kernel/nvidia/nv-mmap.c
-+++ b/kernel/nvidia/nv-mmap.c
+--- a/nvidia/nv-mmap.c
++++ b/nvidia/nv-mmap.c
 @@ -581,16 +581,31 @@
      return status;
  }
