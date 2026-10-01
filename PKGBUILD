@@ -94,6 +94,7 @@ _debian_patches=(
     'arm-outer-sync.patch'
     'nvidia-drm-arm-cflags.patch'
     'armhf-on-arm64-kernel.patch'
+    'vma-lock-7.0-plus.patch'
 )
 
 source=("https://us.download.nvidia.com/XFree86/Linux-x86_64/${pkgver}/${_pkg}.run"
@@ -118,7 +119,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             'c5aa7b8abe69e72bfdc6b9ee8afbfd350bcc557e894558f2e6e4087fa9aa0dd8'
             '1d053c5078387021338cfc3a732bed61be1a20a549775573788e9134775c8149'
             '9e6f14afaa7523370ad96e6675d3357441ee3985e60405cb3e0ced30b2ddaf76'
-            'a995ec52b28613d0436d355c48466165e565867dd3f8f05aacd5d9eed45a9519'
+            'd2f281f27a707826ee5ad50fd99bf13ab775fd394d7241028c65aa5c4aa818ed'
             'af5e491da1d10cb6c01e0e46f23939fb22fe412b89dce923eb146c30a79f684e'
             '9605f378ba51feb7c984cd04185fac70a83ff5dd30fbff24ad91404c9312ac82'
             '7c2071c822d927280deafea1fca955c41ca352ce4dd81732063a166a32553f62'
@@ -191,7 +192,8 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '7df0535acebbecf6d3c478162a119eb8faac0103831dddba4926bf28f9997306'
             '93ec4257b95d61b9fef6740838483ab43d55d649032bf263752cc6811d0c99ab'
             '6ab44a4905e69e2d39470c328ed734a9aa610c7b25bad00bde3eab14b1d87c09'
-            'fa2348ed0947bacfc96c0a57d229b11ffd0f945032e182ad0d627a7db2b4acbc')
+            'fa2348ed0947bacfc96c0a57d229b11ffd0f945032e182ad0d627a7db2b4acbc'
+            '81d256e3571765110ca54385d7b11c601def7264854d44a22266469a8a33fbb1')
 
 create_links() {
     find "$pkgdir" -type f -name '*.so*' ! -path '*xorg/*' -print0 | while read -d $'\0' _lib; do
