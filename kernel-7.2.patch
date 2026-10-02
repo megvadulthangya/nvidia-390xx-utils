@@ -269,8 +269,8 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvid
  #endif
 diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-helper.c work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-helper.c
 --- a/nvidia-drm/nvidia-drm-helper.c	2026-10-02 21:21:30.195261766 +0200
-+++ b/nvidia-drm/nvidia-drm-helper.c	2026-10-03 00:46:33.057310371 +0200
-@@ -27,7 +27,25 @@
++++ b/nvidia-drm/nvidia-drm-helper.c	2026-10-03 01:07:26.343244155 +0200
+@@ -27,6 +27,23 @@
   * present simplifies nvidia-drm.ko source.
   */
  
@@ -292,11 +292,9 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvid
 +#define drm_atomic_state_default_release drm_atomic_commit_default_release
 +#endif
  #include "nvidia-drm-helper.h"
-+#include "nvidia-drm-priv.h"
  
  #if defined(NV_DRM_ATOMIC_MODESET_AVAILABLE)
- 
-@@ -180,23 +198,8 @@
+@@ -180,23 +197,8 @@
         }
      }
  
