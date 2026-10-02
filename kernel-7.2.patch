@@ -1,4 +1,4 @@
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/conftest.sh work/kernel-7.2/kernel/conftest.sh
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/conftest.sh work/kernel-7.2/kernel/conftest.sh
 --- a/conftest.sh	2026-10-02 21:21:30.243217501 +0200
 +++ b/conftest.sh	2026-10-02 21:20:25.457855433 +0200
 @@ -2345,7 +2345,7 @@
@@ -200,7 +200,7 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/conftest.sh wor
              fi
          ;;
  
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia/nv-gpu-numa.c work/kernel-7.2/kernel/nvidia/nv-gpu-numa.c
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia/nv-gpu-numa.c work/kernel-7.2/kernel/nvidia/nv-gpu-numa.c
 --- a/nvidia/nv-gpu-numa.c	2026-10-02 21:21:30.082549791 +0200
 +++ b/nvidia/nv-gpu-numa.c	2026-10-02 21:20:25.461072331 +0200
 @@ -158,8 +158,7 @@
@@ -213,7 +213,7 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia/nv-gpu-n
  
      // Convert the memory block ID into an integer
      if (kstrtoull(name_copy + strlen(MEMBLOCK_PREFIX), 0, &memblock_id) != 0) 
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia/os-interface.c work/kernel-7.2/kernel/nvidia/os-interface.c
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia/os-interface.c work/kernel-7.2/kernel/nvidia/os-interface.c
 --- a/nvidia/os-interface.c	2026-10-02 21:21:30.246712089 +0200
 +++ b/nvidia/os-interface.c	2026-10-02 21:20:25.462215427 +0200
 @@ -640,8 +640,7 @@
@@ -226,7 +226,7 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia/os-inter
      task_unlock(current);
  }
  
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-crtc.c work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-crtc.c
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-crtc.c work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-crtc.c
 --- a/nvidia-drm/nvidia-drm-crtc.c	2026-10-02 21:21:30.201186837 +0200
 +++ b/nvidia-drm/nvidia-drm-crtc.c	2026-10-02 21:20:25.463563716 +0200
 @@ -130,15 +130,15 @@
@@ -267,28 +267,47 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvid
      struct drm_crtc_state *crtc_state =
          drm_atomic_get_new_crtc_state(state, crtc);
  #endif
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-helper.c work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-helper.c
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-helper.c work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-helper.c
 --- a/nvidia-drm/nvidia-drm-helper.c	2026-10-02 21:21:30.195261766 +0200
-+++ b/nvidia-drm/nvidia-drm-helper.c	2026-10-02 22:15:24.950886610 +0200
-@@ -180,12 +180,15 @@
++++ b/nvidia-drm/nvidia-drm-helper.c	2026-10-02 23:51:35.743702838 +0200
+@@ -27,6 +27,7 @@
+  * present simplifies nvidia-drm.ko source.
+  */
+ 
++#include <linux/version.h>
+ #include "nvidia-drm-helper.h"
+ 
+ #if defined(NV_DRM_ATOMIC_MODESET_AVAILABLE)
+@@ -180,23 +181,12 @@
         }
      }
  
 -#if defined(NV_DRM_ATOMIC_STATE_REF_COUNTING_PRESENT)
-+#if defined(NV_DRM_ATOMIC_COMMIT_REF_COUNTING_PRESENT)
+-    drm_atomic_state_put(state);
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
 +    drm_atomic_commit_put(state);
-+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 21, 0)
-     drm_atomic_state_put(state);
  #else
-     if (ret != 0) {
-         drm_atomic_state_free(state);
+-    if (ret != 0) {
+-        drm_atomic_state_free(state);
 -    } else {
-+    }
-+#endif
-         /*
-          * In case of success, drm_atomic_commit() takes care to cleanup and
-          * free @state.
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm.Kbuild work/kernel-7.2/kernel/nvidia-drm/nvidia-drm.Kbuild
+-        /*
+-         * In case of success, drm_atomic_commit() takes care to cleanup and
+-         * free @state.
+-         *
+-         * Comment placed above drm_atomic_commit() says: The caller must not
+-         * free or in any other way access @state. If the function fails then
+-         * the caller must clean up @state itself.
+-         */
+-    }
++    drm_atomic_state_put(state);
+ #endif
+     return ret;
+ }
+ 
+-#endif /* NV_DRM_ATOMIC_MODESET_AVAILABLE */
++#endif /* NV_DRM_ATOMIC_MODESET_AVAILABLE */
+\ No newline at end of file
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm.Kbuild work/kernel-7.2/kernel/nvidia-drm/nvidia-drm.Kbuild
 --- a/nvidia-drm/nvidia-drm.Kbuild	2026-10-02 21:21:30.164130840 +0200
 +++ b/nvidia-drm/nvidia-drm.Kbuild	2026-10-02 21:20:25.464399789 +0200
 @@ -59,7 +59,7 @@
@@ -312,9 +331,9 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvid
  NV_CONFTEST_TYPE_COMPILE_TESTS += drm_device_has_pdev
  NV_CONFTEST_TYPE_COMPILE_TESTS += dma_resv_add_fence
  NV_CONFTEST_TYPE_COMPILE_TESTS += dma_resv_reserve_fences
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-modeset.c work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-modeset.c
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-modeset.c work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-modeset.c
 --- a/nvidia-drm/nvidia-drm-modeset.c	2026-10-02 21:21:30.201563632 +0200
-+++ b/nvidia-drm/nvidia-drm-modeset.c	2026-10-02 21:20:25.464883511 +0200
++++ b/nvidia-drm/nvidia-drm-modeset.c	2026-10-02 23:17:57.759079379 +0200
 @@ -42,23 +42,23 @@
  #include <drm/drm_atomic_helper.h>
  #include <drm/drm_crtc.h>
@@ -408,18 +427,20 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvid
      }
  
 -#if defined(NV_DRM_ATOMIC_STATE_REF_COUNTING_PRESENT)
-+#if defined(NV_DRM_ATOMIC_COMMIT_REF_COUNTING_PRESENT)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
      /*
-      * If ref counting is present, state will be freed when the caller
-      * drops its reference after we return.
+-     * If ref counting is present, state will be freed when the caller
+-     * drops its reference after we return.
++     * 7.2+: state will be freed when the caller drops its reference
++     * after we return.
       */
  #else
 -    drm_atomic_state_free(state);
-+    drm_atomic_commit_free(state);
++    drm_atomic_state_put(state);
  #endif
  
      return 0;
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-modeset.h work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-modeset.h
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-modeset.h work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-modeset.h
 --- a/nvidia-drm/nvidia-drm-modeset.h	2022-10-12 11:30:31.000000000 +0200
 +++ b/nvidia-drm/nvidia-drm-modeset.h	2026-10-02 21:20:25.465716929 +0200
 @@ -30,17 +30,17 @@
@@ -446,7 +467,7 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvid
  
  
  void nv_drm_handle_flip_occurred(struct nv_drm_device *nv_dev,
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-priv.h work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-priv.h
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvidia-drm-priv.h work/kernel-7.2/kernel/nvidia-drm/nvidia-drm-priv.h
 --- a/nvidia-drm/nvidia-drm-priv.h	2026-10-02 21:21:30.170117581 +0200
 +++ b/nvidia-drm/nvidia-drm-priv.h	2026-10-02 21:20:25.466018016 +0200
 @@ -23,6 +23,19 @@
@@ -469,7 +490,7 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-drm/nvid
  #include "nvidia-drm-conftest.h" /* NV_DRM_AVAILABLE */
  
  #if defined(NV_DRM_AVAILABLE)
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-modeset/nvidia-modeset-linux.c work/kernel-7.2/kernel/nvidia-modeset/nvidia-modeset-linux.c
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-modeset/nvidia-modeset-linux.c work/kernel-7.2/kernel/nvidia-modeset/nvidia-modeset-linux.c
 --- a/nvidia-modeset/nvidia-modeset-linux.c	2026-10-02 21:21:30.146064669 +0200
 +++ b/nvidia-modeset/nvidia-modeset-linux.c	2026-10-02 21:20:25.466761688 +0200
 @@ -20,6 +20,7 @@
@@ -497,7 +518,7 @@ diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-modeset/
  }
  
  void NVKMS_API_CALL nvkms_usleep(NvU64 usec)
-diff -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-uvm/uvm8_pmm_gpu.c work/kernel-7.2/kernel/nvidia-uvm/uvm8_pmm_gpu.c
+diff '--color=auto' -ruN NVIDIA-Linux-x86_64-390.157-no-compat32-patched/kernel/nvidia-uvm/uvm8_pmm_gpu.c work/kernel-7.2/kernel/nvidia-uvm/uvm8_pmm_gpu.c
 --- a/nvidia-uvm/uvm8_pmm_gpu.c	2026-10-02 21:21:30.107547239 +0200
 +++ b/nvidia-uvm/uvm8_pmm_gpu.c	2026-10-02 21:20:25.468074288 +0200
 @@ -2794,7 +2794,7 @@
