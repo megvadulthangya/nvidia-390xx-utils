@@ -72,4 +72,4 @@ arm-outer-sync.patch
 nvidia-drm-arm-cflags.patch
 armhf-on-arm64-kernel.patch
 vma-lock-7.0-plus.patch
-
+kernel-7.0-screen_info.patch
