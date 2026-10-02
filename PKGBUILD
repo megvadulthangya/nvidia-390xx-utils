@@ -197,7 +197,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             'fa2348ed0947bacfc96c0a57d229b11ffd0f945032e182ad0d627a7db2b4acbc'
             '4e6a671112090e64aaa8cc715aeb3b93ba15a8c0cdf3dae0763496fbb208a9a0'
             'e35b11f543cddbdb211a6042090c99c5bb9642c61542e52127773f536e7262b6'
-            '1aa9cfed18c65c581e9b29e53a2bb714bfd3716947c027963f40514f466a96ea')
+            'eec6062e4e334f6e0213f2d07e3ef93655200d8e174505c2110edefdad8de11e')
 
 create_links() {
     find "$pkgdir" -type f -name '*.so*' ! -path '*xorg/*' -print0 | while read -d $'\0' _lib; do
