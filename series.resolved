@@ -76,3 +76,4 @@ kernel-7.0-screen_info.patch
 kernel-6.18-workqueue-flush.patch
 kernel-6.18-prime-fence-flush.patch
 kernel-7.2.patch
+kernel-7.3-acpi.patch
