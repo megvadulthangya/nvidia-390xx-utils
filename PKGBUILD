@@ -97,6 +97,7 @@ _debian_patches=(
     'vma-lock-7.0-plus.patch'
     'kernel-7.0-screen_info.patch'
     'kernel-6.18-workqueue-flush.patch'
+    'kernel-6.18-prime-fence-flush.patch'
     'kernel-7.2.patch'
 )
 
@@ -122,7 +123,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             'c5aa7b8abe69e72bfdc6b9ee8afbfd350bcc557e894558f2e6e4087fa9aa0dd8'
             '1d053c5078387021338cfc3a732bed61be1a20a549775573788e9134775c8149'
             '9e6f14afaa7523370ad96e6675d3357441ee3985e60405cb3e0ced30b2ddaf76'
-            '95921e799a6540bc20b0d4990732cb2550c9640a1808601cb1da5f7ca542436e'
+            '3e181114c271f01b4c7d6dcbdf11d9eac323a63af6fec5af992363798e5ed0d8'
             'af5e491da1d10cb6c01e0e46f23939fb22fe412b89dce923eb146c30a79f684e'
             '9605f378ba51feb7c984cd04185fac70a83ff5dd30fbff24ad91404c9312ac82'
             '7c2071c822d927280deafea1fca955c41ca352ce4dd81732063a166a32553f62'
@@ -199,6 +200,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '4e6a671112090e64aaa8cc715aeb3b93ba15a8c0cdf3dae0763496fbb208a9a0'
             'e35b11f543cddbdb211a6042090c99c5bb9642c61542e52127773f536e7262b6'
             '9e39a4e5b65834c3b223125db4a5fb07901ea6200a2c5f2f1475acbfbd4ddf27'
+            'a9eea9b7ecd655f998a2801015dc9c093df47022c634b346980b02b3fa2855d2'
             '63c992a601544d98434c9bf9b567129dbfb43c227e7f82ba69218201f7e3916d')
 
 create_links() {
