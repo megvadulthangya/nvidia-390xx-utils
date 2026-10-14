@@ -1,10 +1,10 @@
 --- a/nvidia/nv-mmap.c
 +++ b/nvidia/nv-mmap.c
-@@ -627,7 +627,9 @@
+@@ -632,7 +632,9 @@
      if (interrupted)
      {
          // Clean up on error: release refcount and dep_map
--        (void)refcount_sub_and_test(NV_VMA_LOCK_OFFSET, &vma->vm_refcnt);
+-        refcount_sub_and_test(NV_VMA_LOCK_OFFSET, &vma->vm_refcnt);
 +        if (refcount_sub_and_test(NV_VMA_LOCK_OFFSET, &vma->vm_refcnt)) {
 +            /* refcount reached zero on cleanup – nothing to do */
 +        }
