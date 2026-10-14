@@ -101,6 +101,11 @@ _debian_patches=(
     'arm-outer-sync.patch'
     'nvidia-drm-arm-cflags.patch'
     'armhf-on-arm64-kernel.patch'
+    'make-modesetting-default.patch'
+    'fixup-warnings.patch'
+    'kernel-6.18-workqueue-flush.patch'
+    'kernel-6.18-prime-fence-flush.patch'
+    'kernel-7.3-acpi.patch'
 )
 
 source=("https://us.download.nvidia.com/XFree86/Linux-x86_64/${pkgver}/${_pkg}.run"
@@ -127,7 +132,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             'c5aa7b8abe69e72bfdc6b9ee8afbfd350bcc557e894558f2e6e4087fa9aa0dd8'
             '1d053c5078387021338cfc3a732bed61be1a20a549775573788e9134775c8149'
             '9e6f14afaa7523370ad96e6675d3357441ee3985e60405cb3e0ced30b2ddaf76'
-            'a9c7774f59f56dfbd18ba1ab2282fd720f8e9d5a61dc8f5ced85014961bbe485'
+            'dabd653bfe413427c3bb67337efafb4a090fb567aff4ced36a7bf1ccde1c2c4a'
             'af5e491da1d10cb6c01e0e46f23939fb22fe412b89dce923eb146c30a79f684e'
             '9605f378ba51feb7c984cd04185fac70a83ff5dd30fbff24ad91404c9312ac82'
             '7c2071c822d927280deafea1fca955c41ca352ce4dd81732063a166a32553f62'
@@ -206,7 +211,12 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '7df0535acebbecf6d3c478162a119eb8faac0103831dddba4926bf28f9997306'
             '93ec4257b95d61b9fef6740838483ab43d55d649032bf263752cc6811d0c99ab'
             '6ab44a4905e69e2d39470c328ed734a9aa610c7b25bad00bde3eab14b1d87c09'
-            'fa2348ed0947bacfc96c0a57d229b11ffd0f945032e182ad0d627a7db2b4acbc')
+            'fa2348ed0947bacfc96c0a57d229b11ffd0f945032e182ad0d627a7db2b4acbc'
+            '588feb34eac6458680702efb27f466de385434443e21930b2b20eee039e8cfd4'
+            '586839a010bfb82cd15813a37c56800fcb827cb27b705049579cfeb3e9040079'
+            '9e39a4e5b65834c3b223125db4a5fb07901ea6200a2c5f2f1475acbfbd4ddf27'
+            'a9eea9b7ecd655f998a2801015dc9c093df47022c634b346980b02b3fa2855d2'
+            '919b2b04357ce50a461d1a407bf7c9c58fad632a8c8285754b550b6e177575a5')
 
 create_links() {
     find "$pkgdir" -type f -name '*.so*' ! -path '*xorg/*' -print0 | while read -d $'\0' _lib; do
