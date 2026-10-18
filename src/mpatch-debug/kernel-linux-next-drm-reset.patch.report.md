@@ -1,0 +1,504 @@
+# Mpatch Debug Report
+
+> **Note:** This report has been partially anonymized. Please review for any remaining sensitive information before sharing.
+
+- **Mpatch Version:** `1.7.0`
+- **OS:** `linux`
+- **Architecture:** `x86_64`
+- **Timestamp (Unix):** `1792341328`
+
+## Command Line
+
+```sh
+mpatch -vvvv --dry-run <INPUT_FILE> <TARGET_DIR>
+```
+
+## Input Patch File
+
+````markdown
+--- a/conftest.sh   2026-10-17 12:30:15.060387301 +0200
++++ b/conftest.sh   2026-10-17 16:06:54.568679471 +0200
+@@ -5065,6 +5065,38 @@
+             compile_check_conftest "$CODE" "NV_DRM_DRIVER_HAS_DATE" "" "types"
+         ;;
+ 
++        drm_plane_funcs_has_atomic_create_state)
++            #
++            # Determine if struct drm_plane_funcs has atomic_create_state.
++            #
++            # Commit "drm/plane: Remove reset" (Maxime Ripard) in v7.4
++            # replaced the .reset member with .atomic_create_state.
++            #
++            CODE="
++            #include <drm/drm_atomic_helper.h>
++            #include <drm/drm_plane.h>
++            int conftest_drm_plane_funcs_has_atomic_create_state(void) {
++                return offsetof(struct drm_plane_funcs, atomic_create_state);
++            }"
++            compile_check_conftest "$CODE" "NV_DRM_PLANE_FUNCS_HAS_ATOMIC_CREATE_STATE" "" "types"
++        ;;
++
++        drm_crtc_funcs_has_atomic_create_state)
++            #
++            # Determine if struct drm_crtc_funcs has atomic_create_state.
++            #
++            # Commit "drm/crtc: Remove reset" (Maxime Ripard) in v7.4
++            # replaced the .reset member with .atomic_create_state.
++            #
++            CODE="
++            #include <drm/drm_atomic_helper.h>
++            #include <drm/drm_crtc.h>
++            int conftest_drm_crtc_funcs_has_atomic_create_state(void) {
++                return offsetof(struct drm_crtc_funcs, atomic_create_state);
++            }"
++            compile_check_conftest "$CODE" "NV_DRM_CRTC_FUNCS_HAS_ATOMIC_CREATE_STATE" "" "types"
++        ;;
++
+         drm_connector_helper_funcs_mode_valid_has_const_mode_arg)
+             #
+             # Determine if the 'mode' pointer argument is const in
+--- a/nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200
++++ b/nvidia-drm/nvidia-drm-crtc.c  2026-10-17 16:48:44.018372086 +0200
+@@ -178,7 +178,11 @@
+     .update_plane           = drm_atomic_helper_update_plane,
+     .disable_plane          = drm_atomic_helper_disable_plane,
+     .destroy                = nv_drm_plane_destroy,
++#if defined(NV_DRM_PLANE_FUNCS_HAS_ATOMIC_CREATE_STATE)
++    .atomic_create_state    = drm_atomic_helper_plane_create_state,
++#else
+     .reset                  = drm_atomic_helper_plane_reset,
++#endif
+     .atomic_duplicate_state = drm_atomic_helper_plane_duplicate_state,
+     .atomic_destroy_state   = drm_atomic_helper_plane_destroy_state,
+ };
+@@ -291,7 +295,11 @@
+ static struct drm_crtc_funcs nv_crtc_funcs = {
+     .set_config             = drm_atomic_helper_set_config,
+     .page_flip              = drm_atomic_helper_page_flip,
++#if defined(NV_DRM_CRTC_FUNCS_HAS_ATOMIC_CREATE_STATE)
++    .atomic_create_state    = drm_atomic_helper_crtc_create_state,
++#else
+     .reset                  = drm_atomic_helper_crtc_reset,
++#endif
+     .destroy                = nv_drm_crtc_destroy,
+     .atomic_duplicate_state = nv_drm_atomic_crtc_duplicate_state,
+     .atomic_destroy_state   = nv_drm_atomic_crtc_destroy_state,
+--- a/nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200
++++ b/nvidia-drm/nvidia-drm.Kbuild  2026-10-17 16:33:34.582415788 +0200
+@@ -113,6 +113,8 @@
+ NV_CONFTEST_TYPE_COMPILE_TESTS += drm_unlocked_ioctl_flag_present
+ NV_CONFTEST_TYPE_COMPILE_TESTS += drm_output_poll_changed
+ NV_CONFTEST_TYPE_COMPILE_TESTS += drm_driver_has_date
++NV_CONFTEST_TYPE_COMPILE_TESTS += drm_plane_funcs_has_atomic_create_state
++NV_CONFTEST_TYPE_COMPILE_TESTS += drm_crtc_funcs_has_atomic_create_state
+ NV_CONFTEST_TYPE_COMPILE_TESTS += file_operations_fop_unsigned_offset_present
+ NV_CONFTEST_TYPE_COMPILE_TESTS += drm_connector_helper_funcs_mode_valid_has_const_mode_arg
+ NV_CONFTEST_TYPE_COMPILE_TESTS += drm_fb_create_takes_format_info
+
+````
+
+## Original Target File(s)
+
+### File: `conftest.sh   2026-10-17 12:30:15.060387301 +0200`
+
+*File does not exist.*
+### File: `nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200`
+
+*File does not exist.*
+### File: `nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200`
+
+*File does not exist.*
+
+## Full Trace Log
+
+````log
+
+Found 3 patch operation(s) to perform.
+Fuzzy matching enabled with threshold: 0.70
+debug: apply_patches_to_dir: applying 3 patch(es) to '.' (dry_run=true, fuzz=0.70)
+debug:   [1/3] Applying patch for 'conftest.sh   2026-10-17 12:30:15.060387301 +0200' (1 hunk(s))
+Applying patch to: conftest.sh   2026-10-17 12:30:15.060387301 +0200
+debug:   apply_patch_to_file: target_dir='.', hunks=1, dry_run=true, fuzz=0.70
+trace:   Checking path safety for base '.' and relative path 'conftest.sh   2026-10-17 12:30:15.060387301 +0200'
+trace:   ensure_path_is_safe: canonicalized base directory '<TARGET_DIR>'
+trace:   ensure_path_is_safe: processing component 'Normal("conftest.sh   2026-10-17 12:30:15.060387301 +0200")' on virtual path '<TARGET_DIR>'
+trace:   Path safety verified: 'conftest.sh   2026-10-17 12:30:15.060387301 +0200' safely resolves to '<TARGET_DIR>/conftest.sh   2026-10-17 12:30:15.060387301 +0200'
+debug:   Resolved safe target path: '<TARGET_DIR>/conftest.sh   2026-10-17 12:30:15.060387301 +0200'
+trace: Hunk::get_match_block: extracted 6 match line(s)
+trace: Patch::is_creation for 'conftest.sh   2026-10-17 12:30:15.060387301 +0200': false (first hunk old_start_line=Some(5065))
+debug:   Target file '<TARGET_DIR>/conftest.sh   2026-10-17 12:30:15.060387301 +0200' does not exist, and patch is not a creation patch. Aborting.
+debug:   [2/3] Applying patch for 'nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200' (2 hunk(s))
+Applying patch to: nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200
+debug:   apply_patch_to_file: target_dir='.', hunks=2, dry_run=true, fuzz=0.70
+trace:   Checking path safety for base '.' and relative path 'nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200'
+trace:   ensure_path_is_safe: canonicalized base directory '<TARGET_DIR>'
+trace:   ensure_path_is_safe: processing component 'Normal("nvidia-drm")' on virtual path '<TARGET_DIR>'
+trace:   ensure_path_is_safe: processing component 'Normal("nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200")' on virtual path '<TARGET_DIR>/nvidia-drm'
+trace:   Path safety verified: 'nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200' safely resolves to '<TARGET_DIR>/nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200'
+debug:   Resolved safe target path: '<TARGET_DIR>/nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200'
+trace: Hunk::get_match_block: extracted 7 match line(s)
+trace: Patch::is_creation for 'nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200': false (first hunk old_start_line=Some(178))
+debug:   Target file '<TARGET_DIR>/nvidia-drm/nvidia-drm-crtc.c  2026-10-17 12:30:14.993488094 +0200' does not exist, and patch is not a creation patch. Aborting.
+debug:   [3/3] Applying patch for 'nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200' (1 hunk(s))
+Applying patch to: nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200
+debug:   apply_patch_to_file: target_dir='.', hunks=1, dry_run=true, fuzz=0.70
+trace:   Checking path safety for base '.' and relative path 'nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200'
+trace:   ensure_path_is_safe: canonicalized base directory '<TARGET_DIR>'
+trace:   ensure_path_is_safe: processing component 'Normal("nvidia-drm")' on virtual path '<TARGET_DIR>'
+trace:   ensure_path_is_safe: processing component 'Normal("nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200")' on virtual path '<TARGET_DIR>/nvidia-drm'
+trace:   Path safety verified: 'nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200' safely resolves to '<TARGET_DIR>/nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200'
+debug:   Resolved safe target path: '<TARGET_DIR>/nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200'
+trace: Hunk::get_match_block: extracted 6 match line(s)
+trace: Patch::is_creation for 'nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200': false (first hunk old_start_line=Some(113))
+debug:   Target file '<TARGET_DIR>/nvidia-drm/nvidia-drm.Kbuild  2026-10-17 12:30:14.994523077 +0200' does not exist, and patch is not a creation patch. Aborting.
+debug: apply_patches_to_dir: completed 3 patch(es). all_succeeded=false, all_applied_cleanly=false
+
+>>> Operation 1/3
+debug: suggest_close_file_paths: searching for candidates close to './conftest.sh   2026-10-17 12:30:15.060387301 +0200' in '.'
+trace:   suggest_close_file_paths: descending into dir './common'
+trace:   suggest_close_file_paths: descending into dir './common/inc'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/xapi-sdk.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvCpuUuid.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-kthread-q.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/uvmtypes.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-linux.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/cpuopsys.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-gpu-info.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvkms-api-types.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-memdbg.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-register-module.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvstatuscodes.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvstatus.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-timer.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-retpoline.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-misc.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv_uvm_interface.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvlimits.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvkms-kapi.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvtypes.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-time.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-list-helpers.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/conftest.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-mm.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-kref.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-pgprot.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvmisc.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-pci-types.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv_speculation_barrier.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvgputypes.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/os-interface.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-modeset-interface.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-kernel-interface-api.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-hypervisor.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nvipmi.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-procfs.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-lock.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv_uvm_types.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv_stdarg.h'
+trace:   suggest_close_file_paths: found candidate file 'common/inc/nv-proto.h'
+trace:   suggest_close_file_paths: found candidate file 'Kbuild'
+trace:   suggest_close_file_paths: descending into dir './nvidia-drm'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-encoder.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-connector.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-utils.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-encoder.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-gem.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nv-pci-table.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-modeset.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-linux.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-dma-fence-helper.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-drv.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-ioctl.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-prime-fence.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-modeset.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nv-pci-table.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-priv.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-dma-resv-helper.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-fb.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-gem-user-memory.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-gem-user-memory.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-crtc.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-helper.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-gem.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm.Kbuild'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-drv.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-conftest.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-connector.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-gem-nvkms-memory.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-helper.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-utils.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-os-interface.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-fb.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-gem-nvkms-memory.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-prime-fence.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-drm/nvidia-drm-crtc.c'
+trace:   suggest_close_file_paths: descending into dir './nvidia-modeset'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-modeset/nvidia-modeset-linux.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-modeset/nvkms.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-modeset/nvkms-ioctl.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-modeset/nvidia-modeset-os-interface.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-modeset/nvidia-modeset.Kbuild'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-modeset/nv-modeset-kernel.o_binary'
+trace:   suggest_close_file_paths: found candidate file 'dkms.conf'
+trace:   suggest_close_file_paths: found candidate file 'Makefile'
+trace:   suggest_close_file_paths: descending into dir './nvidia-uvm'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_push_macros.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_events.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pmm_gpu.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_test_rng.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_access_counters.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clc365.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_linux_ioctl.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_tree_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clc06f.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_kepler_host.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_va_block.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_lock.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_heuristics.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/nvstatus.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_lock.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_linux.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_maxwell.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/cla06fsubch.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_page_tree_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_module.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/nvidia-uvm-sources.Kbuild'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_va_range.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_kvmalloc_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_mmu.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clc1b5.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pmm_sysmem.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_linux.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_channel_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_user_channel.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_migrate.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/nvCpuUuid.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_semaphore_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_module.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_isr.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_kvmalloc.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_debug_optimized.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_volta_host.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_replayable_faults.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_mem.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clc3b5.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_tlb_batch.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_rm_mem_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clb0b5.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_thread_context.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/nvidia-uvm.Kbuild'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_ce_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_procfs.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_common.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pascal_mmu.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pascal_fault_buffer.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_lock_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_kvmalloc.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_heuristics.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_group_tree_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_utils_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_tlb_batch.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_init.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_allocator.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_mem.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_thread_context.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_volta_fault_buffer.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_test_ioctl.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_utils.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_volta_mmu.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_rb_tree.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_va_block.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_minimal_init.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clc076.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pascal_fault_buffer.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_hal.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_group.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_semaphore.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_fault_buffer_flush_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pmm_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_va_space.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_prefetch.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_mmu.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/ctrl2080mc.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_volta_access_counter_buffer.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_isr.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_utils.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pte_batch.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pmm_gpu.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_map_external.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_test_rng.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pmm_sysmem_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pushbuffer.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_hmm.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_tracker.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_rb_tree_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_map_external.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_forward_decl.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_rb_tree.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_hmm.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_allocator_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_non_replayable_faults.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_tree.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_replayable_faults.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_va_block_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_thrashing.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_tools.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pascal_host.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_tree.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_events.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_get_rm_ptes_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_mmu_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_peer_identity_mappings_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_push.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_processors.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_kepler_mmu.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_group.h'
+trace:   suggest_close_file_paths: descending into dir './nvidia-uvm/hwref'
+trace:   suggest_close_file_paths: descending into dir './nvidia-uvm/hwref/volta'
+trace:   suggest_close_file_paths: descending into dir './nvidia-uvm/hwref/volta/gv100'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/hwref/volta/gv100/dev_fault.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/hwref/volta/gv100/dev_fb.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/hwref/volta/gv100/dev_mmu.h'
+trace:   suggest_close_file_paths: descending into dir './nvidia-uvm/hwref/pascal'
+trace:   suggest_close_file_paths: descending into dir './nvidia-uvm/hwref/pascal/gp100'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/hwref/pascal/gp100/dev_fault.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/hwref/pascal/gp100/dev_fb.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/hwref/pascal/gp100/dev_master.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/hwref/pascal/gp100/dev_mmu.h'
+trace:   suggest_close_file_paths: descending into dir './nvidia-uvm/hwref/kepler'
+trace:   suggest_close_file_paths: descending into dir './nvidia-uvm/hwref/kepler/gk104'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/hwref/kepler/gk104/dev_mmu.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_ioctl.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/cla0b5.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_thrashing.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_hal.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_utils.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_volta_fault_buffer.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/cla16f.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_common.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_push_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_va_space.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_rm_mem.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clb069.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_kepler.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pascal.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clc0b5.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_tracker_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clb06f.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pte_batch.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pushbuffer.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_api.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_hal_types.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_test.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_tracker.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_global.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_tools_init.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_module_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_maxwell_host.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_tools.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_range_allocator.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clc36f.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_unit_test.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_rm_mem.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_user_channel.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_channel.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_push.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_kepler_ce.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_utils.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_events_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_policy.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_channel.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/cla06f.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_mem_test.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_semaphore.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pascal_ce.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_va_block_types.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_va_range.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_pmm_sysmem.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_perf_prefetch.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm_unsupported.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_volta.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_non_replayable_faults.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_global.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_gpu_access_counters.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/clc369.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia-uvm/uvm8_procfs.c'
+trace:   suggest_close_file_paths: descending into dir './nvidia'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/os-mlock.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-p2p.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv_gpu_ops.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvidia.Kbuild'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-pci-table.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-kthread-q-selftest.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-mempool.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-kthread-q.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-procfs.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-usermap.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/os-interface.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-dma.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-acpi.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-pat.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-report-err.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-pci-table.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-reg.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/rmp2pdefines.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-chrdev.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-gpu-numa.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvlink_common.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/os-usermap.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-frontend.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-vm.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/os-registry.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-ibmnpu.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-mmap.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-memdbg.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-instance.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv_uvm_interface.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-i2c.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-gpu-numa.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/rmil.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvlink_linux.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvlink_errors.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/os-pci.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-cray.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-gvi.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvidia-sources.Kbuild'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-p2p.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvlink_export.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-vtophys.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-modeset-interface.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-kernel.o_binary'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-report-err.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-frontend.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-instance.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvlink_linux.c'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-pat.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nv-ibmnpu.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvlink_pci.h'
+trace:   suggest_close_file_paths: found candidate file 'nvidia/nvlink_proto.h'
+trace:   suggest_close_file_paths: found candidate file 'conftest.sh'
+trace:   suggest_close_file_paths: found candidate file 'mpatch-debug-report-1792341328.md'
+trace: suggest_close_file_paths: scanned 319 candidate file(s) in base directory
+suggest_close_file_paths: query 'conftest.sh   2026-10-17 12:30:15.060387301 +0200' yielded 0 suggestion(s): []
+````
+
+## Final Target File(s)
+
+> This section shows the state of the target files *after* the patch operation was attempted.
+
+*Final file state is the same as the original state because `--dry-run` was active.*
+
+## Discrepancy Check
+
+> This section verifies that applying the patch and then creating a new diff from the result reproduces the original input patch. This is a key integrity check.
+
+*Discrepancy check was skipped because `--dry-run` was active.*

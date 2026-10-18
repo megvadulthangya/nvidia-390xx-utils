@@ -9,22 +9,16 @@
  #include "nvidia-drm-conftest.h"
  
  #if defined(NV_DRM_AVAILABLE)
-@@ -322,7 +322,18 @@
+@@ -322,6 +322,12 @@
  
      /* Wait for all its already schedule callbacks to complete. */
  
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
-+    /*
-+     * Linux 6.18 removed flush_scheduled_work() and emits a stack dump
-+     * when called.  This callback path uses schedule_work() (system_wq),
-+     * and the fence context teardown already synchronizes with all
-+     * scheduled callbacks before reaching this point, so no flush is
-+     * needed on 6.18+.
-+     */
 +    (void)0;
-+#else
++#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
      flush_scheduled_work();
++#else
++    flush_workqueue(system_wq);
 +#endif
  
      /* Free nvkms resources */
- 
