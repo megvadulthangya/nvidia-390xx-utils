@@ -419,21 +419,24 @@ _mpatch_apply() {
     local _patchname
     _patchname=$(basename "$_patchfile")
 
-    if mpatch "${_mpatch_opts[@]}" "$_patchfile" "$_targetdir"; then
+    # 1. Alkalmazás – a VALÓDI exit kódot elmentjük, mielőtt bármi felülírná.
+    mpatch "${_mpatch_opts[@]}" "$_patchfile" "$_targetdir"
+    local _rc=$?
+
+    # 2. Siker → korai visszatérés, debug nem kell.
+    if [ "$_rc" -eq 0 ]; then
         return 0
     fi
 
-    local _rc=$?
+    # 3. Bukás → hibaüzenet, majd debug riport (ha be van kapcsolva).
     echo "!!! mpatch FAILED (rc=$_rc): $_patchname" >&2
 
     if [ "${_mpatch_debug_on_failure}" = "1" ]; then
         local _dbgdir="${srcdir}/mpatch-debug"
         mkdir -p "$_dbgdir"
         echo ">>> Debug riport generálása: $_dbgdir/" >&2
-        # Újrafuttatás debug opciókkal – a -vvvv miatt riport készül
         ( cd "$_targetdir" && mpatch "${_mpatch_debug_opts[@]}" \
             "$_patchfile" . ) > "$_dbgdir/${_patchname}.stdout" 2>&1 || true
-        # A keletkezett riportot átmozgatjuk
         find "${_targetdir}" -maxdepth 1 -name 'mpatch-debug-report-*.md' \
             -exec mv {} "$_dbgdir/${_patchname}.report.md" \; 2>/dev/null || true
         echo ">>> Nézd meg: $_dbgdir/${_patchname}.report.md" >&2
@@ -441,7 +444,8 @@ _mpatch_apply() {
         echo ">>> 'DEBUG WORKFLOW – HA EGY PATCH ELHASAL' részt." >&2
     fi
 
-    return $_rc
+    # 4. A VALÓDI hibakóddal térünk vissza → a hívó `|| exit 1` lefut.
+    return "$_rc"
 }
 
 # =============================================================================
