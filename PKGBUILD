@@ -4,13 +4,19 @@
 # Contributor: Thomas Baechler <thomas@archlinux.org>
 # Contributor: Sven-Hendrik Haase <svenstaro@gmail.com>
 #
+# Maintainer: Gyöngyösi Gábor <gabor at gshoots dot hu>
+# Contributor: Mark Wagie <mark at manjaro dot org>
+# Contributor: Philip Müller <philm[at]manjaro[dot]org>
+# Contributor: Thomas Baechler <thomas@archlinux.org>
+# Contributor: Sven-Hendrik Haase <svenstaro@gmail.com>
+#
 # =============================================================================
 #  NVIDIA 390xx – Debian patch-sorozat mpatch-csel
 #  For Manjaro-awesome-respin
 # =============================================================================
 #
 #  ┌─────────────────────────────────────────────────────────────────────────┐
-#  │  MPATCH – TELJES KÉZIKÖNYV A PKGBUILD-BEN                              │
+#  │  MPATCH – HORDOZHATÓ KÉZIKÖNYV A PKGBUILD-BEN                          │
 #  │  (Ha elfelejted, itt minden megtalálható. Nem kell GitHub-ot nyitni.)  │
 #  └─────────────────────────────────────────────────────────────────────────┘
 #
@@ -40,12 +46,29 @@
 #  csak egy "patch_target" nevű fájlt tud patchelni – nekünk nem jó.
 #
 #  ---------------------------------------------------------------------------
+#  FORMÁTUM-LIMITÁCIÓK (ezeket az mpatch NEM tudja alkalmazni)
+#  ---------------------------------------------------------------------------
+#  Ha a patch az alábbiak bármelyikét tartalmazza, az mpatch NEM
+#  próbálkozik fuzzy-val, hanem azonnal leáll (exit 1, semmit nem ír):
+#
+#    - Git rename/copy:    "rename from" / "copy from"
+#    - Git binary patch:   "GIT binary patch"
+#    - Symlink / submodule mód (bármi, ami nem 100644 / 100755)
+#    - Context diff:       "diff -c"  → regeneráld "diff -u"-val
+#
+#  ⚠ EZ NEM FUZZ-PROBLÉMA. Ha egy patch elbukik, ELŐSZÖR ezt kell
+#  kizárni, mielőtt a fuzz-factort lazítanád. Ha ezek közül van benne,
+#  a --fuzz-factor 0.3 sem segít – a patchet ki kell venni, vagy
+#  kézzel át kell írni.
+#
+#  ---------------------------------------------------------------------------
 #  PARANCSONKÉNTI OPCIÓK (mind a PKGBUILD _mpatch_opts tömbben)
 #  ---------------------------------------------------------------------------
 #
 #  --fuzz-factor N            Hasonlósági küszöb, 0.0 – 1.0
-#     0.0   = csak egzakt egyezés (legbiztonságosabb, legsérülékenyebb
-#             a forrás változásaira)
+#     0.0   = fuzzy KIKAPCSOLVA. Az egzakt és a trailing-whitespace-t
+#             toleráló match továbbra is működik. NEM bájt-pontos, és
+#             NEM viselkedik úgy, mint a GNU patch. Preview: --dry-run.
 #     0.5   = laza (kockázatos, csak debug célra)
 #     0.7   = DEFAULT (a tool ajánlott értéke)
 #     0.9   = nagyon szigorú (kevés eltűréssel)
@@ -53,12 +76,14 @@
 #
 #     MIKOR MELYIK?
 #       - Build-hez: 0.7 (default) vagy 0.9 (ha van idő debugolni)
-#       - Ha egy patch elhasal 0.7-en: próbáld 0.5-öt → ha sikerül,
-#         a patch elavult, FRISSÍTENI KELL, nem lazítani
+#       - Ha egy patch elhasal 0.7-en: ELŐSZÖR a FORMÁTUM-LIMITÁCIÓK
+#         szekciót kell kizárni (fent), csak utána lazíts 0.5-re.
+#         Ha 0.5-ön sikerül, a patch elavult → FRISSÍTENI KELL,
+#         nem lazítani.
 #       - Ha 0.5 sem elég: a patch kontextusa túlságosan eltér,
 #         valószínűleg upstream már beolvasztotta → a patchet ki kell venni
 #
-#  -a / --atomic / --all-or-nothing
+#  -a / --atomic / --all-or-nothing   (a kettő UGYANAZ)
 #     Minden-vagy-semmi. Ha bármely hunk elhasal, egy fájl sem íródik.
 #     Build-hez KÖTELEZŐ. Kikapcsolva részleges írás lehetséges, ami
 #     csendben elrontja a forrásfát.
@@ -80,16 +105,43 @@
 #  --dry-run                   Csak előnézet, nem ír fájlt.
 #                              Debug workflow 1. lépése: mit tenne?
 #
-#  -c / --clipboard            Vágólapról olvas. Build-hez nem kell.
+#  -c / --clipboard            Vágólapról olvas. Ilyenkor az INPUT_FILE
+#                              elhagyható: `mpatch -c ./src` is működik.
+#                              Build-hez nem kell.
 #
-#  -                           stdin-ről olvas. Build-hez nem kell
-#                              (fájlból olvasunk).
+#  -                           stdin-ről olvas. Pipe esetén a '-' is
+#                              elhagyható: `git diff | mpatch ./src`.
+#                              Build-hez nem kell (fájlból olvasunk).
 #
-#  -vvvv                       Részletes debug riport hiba esetén:
-#                              mpatch-debug-report-<timestamp>.md
-#                              Tartalmazza: fájlállapotok, logok, diffek.
+#  -v / --verbose              Ismételhető, szintenként:
+#                                -v     info (mit csinál épp)
+#                                -vv    debug
+#                                -vvv   trace
+#                                -vvvv  trace + debug-riport fájl
+#                              Siker esetén az mpatch ALAPBÓL SEMMIT
+#                              nem ír ki. Ha a build logban látni akarod
+#                              a patchek előrehaladását, tegyél -v-t a
+#                              _mpatch_opts-ba.
 #
 #  -h / --help                 Súgó.
+#
+#  ---------------------------------------------------------------------------
+#  EXIT KÓDOK ÉS KIMENET (a _mpatch_apply logikája erre épül)
+#  ---------------------------------------------------------------------------
+#
+#    Siker (minden hunk alkalmazva)     → exit 0, semmit nem ír ki
+#    Hiba (bármely hunk elbukik)        → exit 1, kiírja a legközelebbi
+#                                          találatot + hasonlóságot
+#    Nincs patch a bemenetben           → warning + exit 0  ⚠ CSAPDA
+#
+#  ⚠ A "nincs patch → exit 0" csapda: ha egy Debian patch véletlenül
+#  üres, vagy csak kommenteket tartalmaz, az mpatch NÉMÁN átengedi,
+#  és a build később, érthetetlen módon hasal el. A _mpatch_apply
+#  ezt nem tudja kiszűrni – ha gyanús egy patch, nézd meg a tartalmát.
+#
+#  ⚠ --atomic NÉLKÜL a sikeres hunok lemezre íródnak akkor is, ha
+#  más hunok elbuknak → részleges, csendben elrontott forrásfa.
+#  Ezért van --atomic kötelezően a _mpatch_opts-ban.
 #
 #  ---------------------------------------------------------------------------
 #  DEBUG WORKFLOW – HA EGY PATCH ELHASAL
@@ -100,7 +152,14 @@
 #     A prepare() automatikusan -vvvv-vel újrafuttatja a hibás patchet,
 #     és a debug-riportot a ${srcdir}/mpatch-debug/-be másolja.
 #
-#  2. LÉPÉS – Nézd meg a debug-riportot
+#  2. LÉPÉS – Kizártad a FORMÁTUM-LIMITÁCIÓT?
+#     Nézd meg a patch tartalmát:
+#       grep -E 'rename from|copy from|GIT binary patch|^diff -c ' <patch>
+#     Ha bármelyik találat van: a fuzz nem segít, a patchet ki kell
+#     venni vagy kézzel át kell írni. Csak ha üres a találat, menj
+#     tovább a 3. lépésre. (Ez a leggyakrabban elfelejtett ellenőrzés.)
+#
+#  3. LÉPÉS – Nézd meg a debug-riportot
 #     mpatch-debug-report-<timestamp>.md a ${srcdir}/mpatch-debug/-ben.
 #     Tartalmazza:
 #       - az eredeti patch-et
@@ -108,14 +167,14 @@
 #       - inline word-level diffet a nem illeszkedő hunkról
 #       - a legközelebbi hasonló fájlútvonalakat (ha a fájl nem található)
 #
-#  3. LÉPÉS – Próbáld lazítani a fuzz-factort
+#  4. LÉPÉS – Próbáld lazítani a fuzz-factort
 #     Szerkeszd a PKGBUILD-ben a _mpatch_opts-ot:
 #       --fuzz-factor 0.5
 #     Futtasd újra: makepkg -f
 #     Ha sikerül: a patch elavult, jegyezd fel, és később frissítsd.
-#     Ha nem sikerül: 4. lépés.
+#     Ha nem sikerül: 5. lépés.
 #
-#  4. LÉPÉS – Reverse-engineer
+#  5. LÉPÉS – Reverse-engineer
 #     Nézd meg, mit csinál a patch eredetileg:
 #       mpatch -R --dry-run <patch> kernel/
 #     Ez megmutatja, mit venne ki a forrásból.
@@ -123,7 +182,7 @@
 #       https://salsa.debian.org/nvidia-team/nvidia-graphics-drivers
 #     Keress rá a patch nevére, nézd meg az eredeti commitot.
 #
-#  5. LÉPÉS – Kihagyás vagy frissítés
+#  6. LÉPÉS – Kihagyás vagy frissítés
 #     Ha a patch már upstream-ben van: vedd ki a series.resolved-ból.
 #     Ha a patch elavult: frissítsd a Debian salsa repóból.
 #     Ha muszáj: írj saját patchet a különbségre.
