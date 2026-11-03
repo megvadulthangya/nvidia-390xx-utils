@@ -309,7 +309,6 @@ _debian_patches=(
     'armhf-on-arm64-kernel.patch'
     'make-modesetting-default.patch'
     'fixup-warnings.patch'
-    'kernel-6.18-prime-fence-flush.patch'
     'kernel-7.3-acpi.patch'
     'kernel-linux-next-drm-reset.patch'
 )
