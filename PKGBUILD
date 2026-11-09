@@ -427,7 +427,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             'bc9ebbd85ee56a166ab1d81a193fae228c2cc010bccc7d13188af80444aa008e'
             '919b2b04357ce50a461d1a407bf7c9c58fad632a8c8285754b550b6e177575a5'
             'f07ab1ad7b4cfb471c267b6761cf172715d50a1e3c56220c3eed146300aa7fb6'
-            'fdabb098baa2eab7f16bc8dd90c931edacc4320d72b5a3d2099b0e3680a0594c'
+            'a1d302bc9342e2751f0e9a8855c247da0406dc2dc99cbc7224ae6a30643d8625'
             '14a1c5a5f2627c5dc77dcfee98b4b83724c2e7f7315a3a2dba95a14f457bd52f')
 
 # =============================================================================
