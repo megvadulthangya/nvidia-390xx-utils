@@ -1,13 +1,13 @@
 --- a/nvidia-drm/nvidia-drm-connector.c
 +++ b/nvidia-drm/nvidia-drm-connector.c
-@@ -30,6 +30,7 @@
- 
+@@ -42,6 +42,7 @@
+ #include <drm/drm_atomic.h>
  #include <drm/drm_atomic_helper.h>
- #include <drm/drm_crtc_helper.h>
+ #include <drm/drm_edid.h>
 +#include <linux/version.h>
  
- #include "nvidia-drm-conftest.h"
- 
+ static void nv_drm_connector_destroy(struct drm_connector *connector)
+ {
 @@ -221,7 +222,11 @@
      .dpms                   = drm_atomic_helper_connector_dpms,
  #endif
