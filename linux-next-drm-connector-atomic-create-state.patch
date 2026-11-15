@@ -1,0 +1,11 @@
+--- a/nvidia-drm/nvidia-drm-connector.c
++++ b/nvidia-drm/nvidia-drm-connector.c
+@@ -221,7 +221,7 @@
+     .dpms                   = drm_atomic_helper_connector_dpms,
+ #endif
+     .destroy                = nv_drm_connector_destroy,
+-    .reset                  = drm_atomic_helper_connector_reset,
++    .atomic_create_state    = drm_atomic_helper_connector_create_state,
+     .force                  = __nv_drm_connector_force,
+     .detect                 = nv_drm_connector_detect,
+     .fill_modes             = drm_helper_probe_single_connector_modes,

@@ -313,6 +313,7 @@ _debian_patches=(
     'kernel-linux-next-drm-reset.patch'
     '390-prime-fence-lifecycle.patch'
     '390-workqueue-tracking.patch'
+    'linux-next-drm-connector-atomic-create-state.patch'
 )
 
 source=("https://us.download.nvidia.com/XFree86/Linux-x86_64/${pkgver}/${_pkg}.run"
@@ -343,7 +344,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             'c5aa7b8abe69e72bfdc6b9ee8afbfd350bcc557e894558f2e6e4087fa9aa0dd8'
             '1d053c5078387021338cfc3a732bed61be1a20a549775573788e9134775c8149'
             '9e6f14afaa7523370ad96e6675d3357441ee3985e60405cb3e0ced30b2ddaf76'
-            'd11b1b1029492a449e7c000ba00659e6b96f06e9fdb0607095986caee160e4a1'
+            '764ee3bb5b1c09e1b8507dbd7dc432602013e379d6fa2a92f47031b260129de6'
             'af5e491da1d10cb6c01e0e46f23939fb22fe412b89dce923eb146c30a79f684e'
             '9605f378ba51feb7c984cd04185fac70a83ff5dd30fbff24ad91404c9312ac82'
             '7c2071c822d927280deafea1fca955c41ca352ce4dd81732063a166a32553f62'
@@ -428,7 +429,8 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '919b2b04357ce50a461d1a407bf7c9c58fad632a8c8285754b550b6e177575a5'
             'f07ab1ad7b4cfb471c267b6761cf172715d50a1e3c56220c3eed146300aa7fb6'
             'a1d302bc9342e2751f0e9a8855c247da0406dc2dc99cbc7224ae6a30643d8625'
-            '14a1c5a5f2627c5dc77dcfee98b4b83724c2e7f7315a3a2dba95a14f457bd52f')
+            '14a1c5a5f2627c5dc77dcfee98b4b83724c2e7f7315a3a2dba95a14f457bd52f'
+            '0255ddea1b3657a993918618590fc104d169c73aa613ffda4b2798b14d4ef3ef')
 
 # =============================================================================
 # SYMLINK GENERÁTOR – a .so SONAME-ekhez szükséges linkek létrehozása.
