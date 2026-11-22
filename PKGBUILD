@@ -194,12 +194,12 @@
 pkgbase=nvidia-390xx-utils
 pkgname=('nvidia-390xx-utils' 'opencl-nvidia-390xx' 'nvidia-390xx-dkms' 'mhwd-nvidia-390xx')
 pkgver=390.157
-pkgrel=1
+pkgrel=5
 arch=('x86_64')
 url="https://www.nvidia.com/"
 license=('custom')
 options=('!strip')
-makedepends=('mpatch-git')
+makedepends=('mpatch-git' 'nvidia-driver-assistant')
 _pkg="NVIDIA-Linux-x86_64-${pkgver}-no-compat32"
 
 # =============================================================================
@@ -317,7 +317,6 @@ _debian_patches=(
 )
 
 source=("https://us.download.nvidia.com/XFree86/Linux-x86_64/${pkgver}/${_pkg}.run"
-        'mhwd-nvidia'
         'nvidia-390xx-utils.install'
         'nvidia-390xx-utils.sysusers'
         'nvidia-390xx.rules'
@@ -334,7 +333,6 @@ source=("https://us.download.nvidia.com/XFree86/Linux-x86_64/${pkgver}/${_pkg}.r
 # Hash-ek: mind SKIP (12 fix fájl + 85 Debian patch = 97 db), hogy a gyakran
 # frissülő Debian patchek és helper fájlok ne okozzanak felesleges build-hibát.
 sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
-            'fa6f1e43b468c7d5b7ad7880cd6be7520f37ebb6e7b8c2c9a08756249754af66'
             '9c18d0b11ef84677983105974bd19b29036d17f496b1f77c58817f97e326d762'
             'd8d1caa5d72c71c6430c2a0d9ce1a674787e9272ccce28b9d5898ca24e60a167'
             'e30714f9b473d810c28763d067e0b85c75f86f23618d968b49b9d1fced9a1dd6'
@@ -774,10 +772,9 @@ package_mhwd-nvidia-390xx() {
 
     install -d -m755 "${pkgdir}/var/lib/mhwd/ids/pci/"
 
-    sh -e ${srcdir}/mhwd-nvidia \
-        ${srcdir}/${_pkg}/README.txt \
-        ${srcdir}/${_pkg}/kernel/nvidia/nv-kernel-amd64.o_binary \
-        > ${pkgdir}/var/lib/mhwd/ids/pci/nvidia-390xx.ids
-
-    sed -i 's/1b81 1b84/1b81 1b82 1b84/g' ${pkgdir}/var/lib/mhwd/ids/pci/nvidia-390xx.ids
+    # Generate the MHWD ID list from the NVIDIA supportedchips data shipped
+    # with nvidia-driver-assistant. Only the 4-digit PCI Device IDs are written;
+    # Subsystem Vendor IDs and Subsystem Device IDs are intentionally ignored.
+    nvidia-driver-assistant --generate-ids 390 \
+        > "${pkgdir}/var/lib/mhwd/ids/pci/nvidia-390xx.ids"
 }
