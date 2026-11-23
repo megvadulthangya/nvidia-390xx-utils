@@ -432,7 +432,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '14a1c5a5f2627c5dc77dcfee98b4b83724c2e7f7315a3a2dba95a14f457bd52f'
             '91791c813a96a770c34b84641552fc6d66c4200914451d8439cdfd2803c5995d'
             '6f36928fc6a381a4ff6665ed61f848e6ac2855e4320ffca1409571a871a81d37'
-            '1cc193537b5a722cf0009366da1c2d808affaf21d42e1a178aba411e4b7677cb')
+            '840dd91ffae9ca57fc8522e88d461092fc69287d5f0eae3f0de2fc1d753ebd71')
 
 # =============================================================================
 # SYMLINK GENERÁTOR – a .so SONAME-ekhez szükséges linkek létrehozása.

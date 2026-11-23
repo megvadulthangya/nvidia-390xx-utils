@@ -1,5 +1,5 @@
---- kernel/conftest.sh
-+++ kernel/conftest.sh
+--- conftest.sh
++++ conftest.sh
 @@ -4358,6 +4358,28 @@
              compile_check_conftest "$CODE" "NV_DRM_GEM_OBJECT_HAS_RESV" "" "types"
          ;;
@@ -29,8 +29,8 @@
          proc_ops)
              #
              # Determine if the 'struct proc_ops' type is present.
---- kernel/nvidia-drm/nvidia-drm.Kbuild
-+++ kernel/nvidia-drm/nvidia-drm.Kbuild
+--- nvidia-drm/nvidia-drm.Kbuild
++++ nvidia-drm/nvidia-drm.Kbuild
 @@ -53,6 +53,8 @@
  NV_CONFTEST_GENERIC_COMPILE_TESTS += is_export_symbol_gpl_refcount_dec_and_test
  NV_CONFTEST_GENERIC_COMPILE_TESTS += is_export_symbol_present_drm_gem_prime_handle_to_fd
@@ -40,8 +40,8 @@
  
  NV_CONFTEST_FUNCTION_COMPILE_TESTS += drm_dev_unref
  NV_CONFTEST_FUNCTION_COMPILE_TESTS += drm_reinit_primary_mode_group
---- kernel/nvidia-drm/nvidia-dma-fence-helper.h
-+++ kernel/nvidia-drm/nvidia-dma-fence-helper.h
+--- nvidia-drm/nvidia-dma-fence-helper.h
++++ nvidia-drm/nvidia-dma-fence-helper.h
 @@ -113,7 +113,11 @@
  #if defined(NV_LINUX_FENCE_H_PRESENT)
      fence_init(fence, ops, lock, context, seqno);
