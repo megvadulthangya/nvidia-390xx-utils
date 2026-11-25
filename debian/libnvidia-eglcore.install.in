@@ -1,2 +1,0 @@
-libnvidia-eglcore.so.#VERSION#	#LIBDIR#/
-libnvidia-glsi.so.#VERSION#	#LIBDIR#/

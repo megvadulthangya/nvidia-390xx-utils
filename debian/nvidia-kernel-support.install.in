@@ -1,4 +1,0 @@
-debian/nvidia-load.conf			etc/nvidia/#MODULE_CURRENT#/
-debian/nvidia-modprobe.conf		etc/nvidia/#MODULE_CURRENT#/
-debian/nvidia-options.conf		etc/nvidia/#MODULE_CURRENT#/
-debian/nvidia-blacklists-nouveau.conf	etc/nvidia/#MODULE_CURRENT#/

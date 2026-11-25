@@ -1,6 +1,0 @@
-kernel/*		usr/src/modules/#NVIDIA-KERNEL#/
-debian/bug-script	usr/src/modules/#NVIDIA-KERNEL#/debian/
-debian/changelog	usr/src/modules/#NVIDIA-KERNEL#/debian/
-debian/control.models	usr/src/modules/#NVIDIA-KERNEL#/debian/
-debian/copyright	usr/src/modules/#NVIDIA-KERNEL#/debian/
-debian/module/debian/*	usr/src/modules/#NVIDIA-KERNEL#/debian/
