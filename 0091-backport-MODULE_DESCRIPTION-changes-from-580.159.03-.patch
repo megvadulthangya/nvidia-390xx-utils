@@ -1,0 +1,22 @@
+From 42e09c4d133ed78899c63f3d6f5314b5f2cbaaac Mon Sep 17 00:00:00 2001
+From: Andreas Beckmann <anbe@debian.org>
+Date: Sat, 12 Sep 2026 04:21:38 +0200
+Subject: [PATCH] backport MODULE_DESCRIPTION changes from 580.159.03 (uvm
+ part)
+
+---
+ nvidia-uvm/uvm_common.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/nvidia-uvm/uvm_common.c b/nvidia-uvm/uvm_common.c
+index 0f4516a8..c7eb411f 100644
+--- a/nvidia-uvm/uvm_common.c
++++ b/nvidia-uvm/uvm_common.c
+@@ -381,3 +381,4 @@ MODULE_PARM_DESC(uvm_enable_builtin_tests,
+ 
+ MODULE_LICENSE("MIT");
+ MODULE_INFO(supported, "external");
++MODULE_DESCRIPTION("NVIDIA Unified Virtual Memory kernel module");
+-- 
+2.39.5
+

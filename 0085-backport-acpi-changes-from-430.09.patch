@@ -1,0 +1,117 @@
+From 0665096f1c1a35111db727a55ab6aab8dc8625f2 Mon Sep 17 00:00:00 2001
+From: Andreas Beckmann <anbe@debian.org>
+Date: Wed, 19 Oct 2022 18:08:31 +0200
+Subject: [PATCH] backport acpi changes from 430.09
+
+---
+ nvidia/nv-acpi.c | 48 +++---------------------------------------------
+ 1 file changed, 3 insertions(+), 45 deletions(-)
+
+diff --git a/nvidia/nv-acpi.c b/nvidia/nv-acpi.c
+index 5c7ac4a8..ea7f8350 100644
+--- a/nvidia/nv-acpi.c
++++ b/nvidia/nv-acpi.c
+@@ -39,11 +39,6 @@ static NV_STATUS   nv_acpi_wmmx_method     (NvU32, NvU8 *, NvU16 *);
+ static NV_STATUS   nv_acpi_mxmi_method     (NvU8 *, NvU16 *);
+ static NV_STATUS   nv_acpi_mxms_method     (NvU8 *, NvU16 *);
+ 
+-#if defined(NV_ACPI_DEVICE_OPS_HAS_MATCH)
+-static int         nv_acpi_match           (struct acpi_device *, struct acpi_driver *);
+-#endif
+-
+-#if defined(ACPI_VIDEO_HID) && defined(NV_ACPI_DEVICE_ID_HAS_DRIVER_DATA) 
+ static const struct acpi_device_id nv_video_device_ids[] = {
+     { 
+         .id          = ACPI_VIDEO_HID, 
+@@ -54,7 +49,6 @@ static const struct acpi_device_id nv_video_device_ids[] = {
+         .driver_data = 0, 
+     },
+ };
+-#endif
+ 
+ static struct acpi_driver *nv_acpi_driver;
+ static acpi_handle nvif_handle = NULL;
+@@ -66,19 +60,10 @@ static acpi_handle mxms_handle = NULL;
+ static const struct acpi_driver nv_acpi_driver_template = {
+     .name = "NVIDIA ACPI Video Driver",
+     .class = "video",
+-#if defined(ACPI_VIDEO_HID)
+-#if defined(NV_ACPI_DEVICE_ID_HAS_DRIVER_DATA)
+     .ids = nv_video_device_ids,
+-#else
+-    .ids = ACPI_VIDEO_HID,
+-#endif
+-#endif
+     .ops = {
+         .add = nv_acpi_add,
+         .remove = nv_acpi_remove,
+-#if defined(NV_ACPI_DEVICE_OPS_HAS_MATCH)
+-        .match = nv_acpi_match,
+-#endif
+     },
+ };
+ 
+@@ -225,7 +210,7 @@ static int nv_acpi_add(struct acpi_device *device)
+     union acpi_object control_argument_0 = { ACPI_TYPE_INTEGER };
+     struct acpi_object_list control_argument_list = { 0, NULL };
+     nvidia_stack_t *sp = NULL;
+-    nv_acpi_integer_t device_id = 0;
++    unsigned long long device_id = 0;
+     int device_counter = 0;
+     acpi_handle handle = NULL;
+ 
+@@ -398,7 +383,7 @@ static void nv_acpi_event(acpi_handle handle, u32 event_type, void *data)
+      */
+     nv_acpi_t *pNvAcpiObject = data;
+     u32 event_val = 0;
+-    nv_acpi_integer_t state;
++    unsigned long long state;
+     int status = 0;
+     int device_counter = 0;
+ 
+@@ -476,33 +461,6 @@ static void nv_acpi_event(acpi_handle handle, u32 event_type, void *data)
+     // unsubscribe.
+ }
+ 
+-#if defined(NV_ACPI_DEVICE_OPS_HAS_MATCH)
+-static int nv_acpi_match(struct acpi_device *device, struct acpi_driver *driver)
+-{
+-    acpi_handle DOS_method_handler, DOD_method_handler;
+-
+-    /*
+-     *
+-     * attempt to get handles to all of these objects
+-     * _DOS = enable/disable output switching method
+-     * _DOD = enumerate all devices attached to the display driver
+-     * 
+-     * If handles are available, this is the VGA object.
+-     *
+-     */
+-
+-    if ((!acpi_get_handle(device->handle, "_DOS", &DOS_method_handler)) &&
+-        (!acpi_get_handle(device->handle, "_DOD", &DOD_method_handler)))
+-    {
+-        nv_printf(NV_DBG_INFO, "NVRM: nv_acpi_match: VGA ACPI device detected.\n");
+-
+-        return 0;
+-    }
+-    else
+-        return (-ENODEV);
+-}
+-#endif
+-
+ /* Do the necessary allocations and install notifier "handler" on the device-node "device" */
+ static NV_STATUS nv_install_notifier(struct acpi_handle *handle, acpi_notify_handler handler)
+ {        
+@@ -1235,7 +1193,7 @@ NV_STATUS NV_API_CALL nv_acpi_ddc_method(
+     union acpi_object *ddc;
+     union acpi_object ddc_arg0 = { ACPI_TYPE_INTEGER };
+     struct acpi_object_list input = { 1, &ddc_arg0 };
+-    nv_acpi_integer_t device_id = 0;
++    unsigned long long device_id = 0;
+     NvU32 i;
+     acpi_handle dev_handle  = NULL;
+     acpi_handle lcd_dev_handle  = NULL;
+-- 
+2.39.5
+
