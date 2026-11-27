@@ -30,7 +30,7 @@
  nvidia-y := $(NVIDIA_OBJECTS)
 --- /dev/null
 +++ b/nvidia/nv-workqueue.c
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,63 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Dedicated workqueue for the NVIDIA 390xx kernel module.
@@ -48,6 +48,9 @@
 +#include <linux/workqueue.h>
 +
 +static struct workqueue_struct *nvidia_390xx_wq;
++
++int nvidia_wq_queue(struct work_struct *work);
++void nvidia_wq_flush(void);
 +
 +int nvidia_wq_queue(struct work_struct *work)
 +{
