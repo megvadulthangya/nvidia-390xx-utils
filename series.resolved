@@ -79,8 +79,11 @@ nvidia-drm-arm-cflags.patch
 armhf-on-arm64-kernel.patch
 make-modesetting-default.patch
 fixup-warnings.patch
-kernel-6.18-workqueue-flush.patch
-kernel-6.18-prime-fence-flush.patch
 kernel-7.3-acpi.patch
 kernel-linux-next-drm-reset.patch
-
+390-prime-fence-lifecycle.patch
+390-workqueue-tracking.patch
+linux-next-drm-connector-atomic-create-state.patch
+390-procfs-next-compat.patch
+390-dma-fence-init-flags.patch
+390-msr-rdmsrq-compat.patch
