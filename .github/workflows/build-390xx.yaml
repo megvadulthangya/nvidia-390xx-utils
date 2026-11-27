@@ -1,0 +1,29 @@
+name: Build NVIDIA 390xx kernel matrix
+
+on:
+  push:
+    # Add or remove branch names here. master and *-results are not tested.
+    branches:
+      - develop
+      - debian-state
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: megvadulthangya/harvest-nvidia-logs/.github/workflows/build-driver.yaml@main
+    with:
+      driver-family: "390xx"
+      source-repository: ${{ github.repository }}
+      source-branch: ${{ github.ref_name }}
+      source-sha: ${{ github.sha }}
+      kernel-repository: ${{ github.repository_owner }}/nvidia-390xx
+      kernel-branch: develop
+      manjaro-branch: testing
+      results-branch: ${{ github.ref_name }}-results
+      history-keep: 30
+      raw-logs: all
+      raw-logs-format: auto
+    secrets:
+      repo_token: ${{ secrets.GITHUB_TOKEN }}
