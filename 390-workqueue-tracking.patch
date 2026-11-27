@@ -20,18 +20,20 @@
      {                                                  \
 --- a/nvidia/os-interface.c
 +++ b/nvidia/os-interface.c
-@@ -9,6 +9,10 @@
+@@ -9,6 +9,12 @@
   */
  
  #define  __NO_VERSION__
 +#include <linux/atomic.h>
 +#include <linux/errno.h>
 +#include <linux/spinlock.h>
++#include <linux/version.h>
 +#include <linux/wait.h>
++#include <linux/workqueue.h>
  #include "nv-misc.h"
  
  #include "os-interface.h"
-@@ -17,6 +21,11 @@
+@@ -17,6 +22,11 @@
  #include "nv-time.h"
  #include "nv-gpu-numa.h"
  
@@ -43,10 +45,30 @@
  #define MAX_ERROR_STRING 512
  static char nv_error_string[MAX_ERROR_STRING];
  nv_spinlock_t nv_error_string_lock;
-@@ -1002,6 +1011,87 @@
+@@ -1002,6 +1012,122 @@
      }
  }
  
++/*
++ * schedule_work() changed its backing queue in Linux 6.18:
++ * system_wq is used through 6.17, system_percpu_wq from 6.18 onward.
++ * Flush the same queue that receives the NVIDIA work items.
++ *
++ * __flush_workqueue() waits for work items queued on entry to finish
++ * executing, including the callback return. This is a system-wide flush;
++ * callers must first stop or quiesce NVIDIA work submissions. Calling
++ * the exported primitive directly avoids the stack-dump warning wrapper
++ * in flush_scheduled_work().
++ */
++static void nv_workqueue_flush_system_queue(void)
++{
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++    __flush_workqueue(system_percpu_wq);
++#else
++    __flush_workqueue(system_wq);
++#endif
++}
++
 +int NV_API_CALL nv_workqueue_init(void)
 +{
 +    unsigned long flags;
@@ -73,6 +95,11 @@
 +{
 +    unsigned long flags;
 +
++    /*
++     * Keep accepting chained work until the NVIDIA pending count reaches
++     * zero. The scheduling function queues work while holding the same
++     * lock, so no accepted item can remain unqueued when we close the gate.
++     */
 +    for (;;)
 +    {
 +        wait_event(nv_workqueue_wait_queue,
@@ -89,11 +116,16 @@
 +
 +        spin_unlock_irqrestore(&nv_workqueue_state_lock, flags);
 +    }
++
++    /* Wait for the final callback to return, not merely to decrement pending. */
++    nv_workqueue_flush_system_queue();
 +}
 +
 +int NV_API_CALL nv_workqueue_schedule(nv_task_t *work)
 +{
 +    unsigned long flags;
++    int queued;
++    int wake = 0;
 +
 +    spin_lock_irqsave(&nv_workqueue_state_lock, flags);
 +
@@ -105,15 +137,17 @@
 +
 +    atomic_inc(&nv_workqueue_pending);
 +
++    /* Queue before releasing the lock so shutdown cannot miss this item. */
++    queued = schedule_work(work);
++    if (!queued)
++        wake = atomic_dec_and_test(&nv_workqueue_pending);
++
 +    spin_unlock_irqrestore(&nv_workqueue_state_lock, flags);
 +
-+    if (schedule_work(work))
-+        return 1;
-+
-+    if (atomic_dec_and_test(&nv_workqueue_pending))
++    if (wake)
 +        wake_up(&nv_workqueue_wait_queue);
 +
-+    return 0;
++    return queued;
 +}
 +
 +void NV_API_CALL nv_workqueue_complete(void)
@@ -126,12 +160,15 @@
 +{
 +    wait_event(nv_workqueue_wait_queue,
 +               atomic_read(&nv_workqueue_pending) == 0);
++
++    /* pending reaches zero before the workqueue callback itself returns. */
++    nv_workqueue_flush_system_queue();
 +}
 +
  static void os_execute_work_item(
      NV_WORKQUEUE_DATA_T *data
  )
-@@ -1009,16 +1099,19 @@
+@@ -1009,16 +1126,19 @@
      nv_work_t *work = NV_WORKQUEUE_UNPACK_DATA(data);
      nvidia_stack_t *sp = NULL;
  
@@ -157,7 +194,7 @@
  }
  
  NV_STATUS NV_API_CALL os_queue_work_item(
-@@ -1037,7 +1130,12 @@
+@@ -1037,7 +1157,12 @@
  
      NV_WORKQUEUE_INIT(&work->task, os_execute_work_item,
                        (void *)work);
@@ -173,17 +210,23 @@
  }
 --- a/nvidia/nv-gvi.c
 +++ b/nvidia/nv-gvi.c
-@@ -48,6 +48,7 @@
+@@ -48,4 +48,5 @@
      nv  = NV_STATE_PTR(nvl);
  
      rm_gvi_bh(nvl->sp[NV_DEV_STACK_ISR_BH], nv);
 +    nv_workqueue_complete();
  }
+@@ -87,6 +88,7 @@
  
- #if defined(NV_PM_SUPPORT_DEVICE_DRIVER_MODEL)
+     nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
+ 
++    synchronize_irq(nv->interrupt_line);
+     NV_WORKQUEUE_FLUSH();
+ 
+     status = rm_gvi_suspend(sp, nv);
 --- a/nvidia/nv.c
 +++ b/nvidia/nv.c
-@@ -854,8 +854,19 @@
+@@ -854,10 +854,21 @@
  
      }
  
@@ -203,6 +246,8 @@
          nv_kmem_cache_free_stack(sp);
          NV_KMEM_CACHE_DESTROY(nvidia_stack_t_cache);
          nv_printf(NV_DBG_ERRORS, "NVRM: rm_init_rm() failed!\n");
+         rc = -EIO;
+         goto failed5;
 @@ -1144,6 +1155,7 @@
      nv_unregister_chrdev((void *)&nv_fops);
  
@@ -219,3 +264,32 @@
      nv_lock_destroy_locks(sp, nv);
  
      // Shutdown the resource manager
+@@ -1894,8 +1907,8 @@
+     if (NV_IS_GVI_DEVICE(nv))
+     {
+         rm_shutdown_gvi_device(sp, nv);
+-        NV_WORKQUEUE_FLUSH();
+         free_irq(nv->interrupt_line, (void *)nvl);
++        NV_WORKQUEUE_FLUSH();
+     }
+     else
+     {
+@@ -4110,6 +4123,12 @@
+         }
+         nv_shutdown_adapter(sp, nv, nvl);
++        if (NV_IS_GVI_DEVICE(nv))
++            NV_WORKQUEUE_FLUSH();
+         nv_dev_free_stacks(nvl);
+     }
++    else if (NV_IS_GVI_DEVICE(nv))
++    {
++        NV_WORKQUEUE_FLUSH();
++    }
+ 
+     nv_destroy_ibmnpu_info(nv);
+@@ -4128,5 +4148,4 @@
+     if (NV_IS_GVI_DEVICE(nv))
+     {
+-        NV_WORKQUEUE_FLUSH();
+         rm_gvi_detach_device(sp, nv);
+         rm_gvi_free_private_state(sp, nv);
