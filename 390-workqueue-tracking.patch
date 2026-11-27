@@ -285,13 +285,10 @@
 +#define NV_FLAG_GVI_STOPPING            0x8000
 --- a/nvidia/nv-gvi.c
 +++ b/nvidia/nv-gvi.c
-@@ -29,8 +29,12 @@
+@@ -29,8 +29,9 @@
      NvU32 need_to_run_bottom_half = 0;
      BOOL ret = TRUE;
  
-+    if (nv->flags & (NV_FLAG_GVI_IN_SUSPEND | NV_FLAG_GVI_STOPPING))
-+        return IRQ_NONE;
-+
      ret = rm_gvi_isr(nvl->sp[NV_DEV_STACK_ISR], nv, &need_to_run_bottom_half);
 -    if (need_to_run_bottom_half && !(nv->flags & NV_FLAG_GVI_IN_SUSPEND))
 +    if (need_to_run_bottom_half &&
@@ -299,18 +296,15 @@
      {
          NV_WORKQUEUE_SCHEDULE(&nvl->work.task);
      }
-@@ -48,5 +52,6 @@
+@@ -48,4 +52,6 @@
      nv  = NV_STATE_PTR(nvl);
  
 -    rm_gvi_bh(nvl->sp[NV_DEV_STACK_ISR_BH], nv);
-+    if (!(nv->flags & (NV_FLAG_GVI_IN_SUSPEND | NV_FLAG_GVI_STOPPING)))
++    if (!(nv->flags & NV_FLAG_GVI_STOPPING))
 +        rm_gvi_bh(nvl->sp[NV_DEV_STACK_ISR_BH], nv);
-     nv_workqueue_complete();
++    nv_workqueue_complete();
  }
-@@ -80,14 +85,20 @@
- 
-     nv = NV_STATE_PTR(lnv);
- 
+@@ -82,13 +85,16 @@
 -    status = rm_shutdown_gvi_device(sp, nv);
 +    nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
 +
@@ -326,7 +320,9 @@
      }
 -        
 -    nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
- 
+-
+-    NV_WORKQUEUE_FLUSH();
+-
 +    synchronize_irq(nv->interrupt_line);
 +
      status = rm_gvi_suspend(sp, nv);
