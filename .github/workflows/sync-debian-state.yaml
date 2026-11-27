@@ -1,0 +1,117 @@
+name: Sync Debian 390xx Patchset
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-debian-state-390xx
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      SALSA_REPO: https://salsa.debian.org/nvidia-team/nvidia-graphics-drivers.git
+      SALSA_BRANCH: 390xx/main
+
+    steps:
+      - name: Checkout workflow and sync tools
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 1
+
+      - name: Run synchronization tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Check whether Debian Salsa changed
+        id: revision
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_SHA="$(git ls-remote --heads "$SALSA_REPO" "refs/heads/$SALSA_BRANCH" | awk 'NR == 1 { print $1 }')"
+          if [[ -z "$CURRENT_SHA" ]]; then
+            echo "Could not determine the Debian Salsa commit for $SALSA_BRANCH."
+            exit 1
+          fi
+
+          git fetch --no-tags --depth=1 origin \
+            refs/heads/debian-state:refs/remotes/origin/debian-state
+
+          PREVIOUS_SHA="$(git show refs/remotes/origin/debian-state:.debian-source-commit 2>/dev/null || true)"
+          echo "previous_sha=$PREVIOUS_SHA" >> "$GITHUB_OUTPUT"
+          echo "PREVIOUS_SHA=$PREVIOUS_SHA" >> "$GITHUB_ENV"
+
+          if [[ "$CURRENT_SHA" == "$PREVIOUS_SHA" ]]; then
+            echo "Debian Salsa has not changed. Skipping clone and synchronization."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Debian Salsa changed: $PREVIOUS_SHA -> $CURRENT_SHA"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Shallow-clone Debian Salsa
+        id: clone
+        if: steps.revision.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SOURCE_DIR="$RUNNER_TEMP/salsa-source"
+          TARGET_DIR="$RUNNER_TEMP/debian-state"
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_ENV"
+
+          git clone --depth 1 --single-branch --no-tags \
+            --branch "$SALSA_BRANCH" "$SALSA_REPO" "$SOURCE_DIR"
+
+          SOURCE_SHA="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
+
+          if [[ "$SOURCE_SHA" == "$PREVIOUS_SHA" ]]; then
+            echo "The branch resolved to the already synchronized commit."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create debian-state worktree
+        if: steps.clone.outputs.changed == 'true'
+        run: git worktree add --detach "$TARGET_DIR" refs/remotes/origin/debian-state
+
+      - name: Synchronize required Debian patch files
+        if: steps.clone.outputs.changed == 'true'
+        run: |
+          python3 scripts/sync-debian-patchset.py \
+            --source-dir "$SOURCE_DIR" \
+            --target-dir "$TARGET_DIR" \
+            --source-sha "$SOURCE_SHA"
+
+      - name: Commit and push debian-state
+        if: steps.clone.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git -C "$TARGET_DIR" add --all
+          git -C "$TARGET_DIR" diff --cached --check -- \
+            PKGBUILD series.resolved .debian-source-commit
+
+          if git -C "$TARGET_DIR" diff --cached --quiet; then
+            echo "No target changes to commit."
+            exit 0
+          fi
+
+          git -C "$TARGET_DIR" \
+            -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Sync Debian 390xx patchset from Salsa (${SOURCE_SHA:0:12})"
+
+          git -C "$TARGET_DIR" push origin HEAD:refs/heads/debian-state
