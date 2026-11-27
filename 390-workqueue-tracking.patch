@@ -20,7 +20,7 @@
 +#define NV_WORKQUEUE_FLUSH() nv_workqueue_flush()
  #if (NV_INIT_WORK_ARGUMENT_COUNT == 2)
  #define NV_WORKQUEUE_INIT(tq,handler,data)             \
-     {                                                  \
+     {
 --- a/nvidia/nvidia.Kbuild
 +++ b/nvidia/nvidia.Kbuild
 @@ -1,2 +1,4 @@
@@ -109,7 +109,7 @@
  #include "nv-misc.h"
  
  #include "os-interface.h"
-@@ -17,6 +22,11 @@
+@@ -17,6 +23,11 @@
  #include "nv-time.h"
  #include "nv-gpu-numa.h"
  
@@ -121,7 +121,7 @@
  #define MAX_ERROR_STRING 512
  static char nv_error_string[MAX_ERROR_STRING];
  nv_spinlock_t nv_error_string_lock;
-@@ -1002,6 +1012,112 @@
+@@ -1002,6 +1013,112 @@
      }
  }
  
@@ -234,7 +234,7 @@
  static void os_execute_work_item(
      NV_WORKQUEUE_DATA_T *data
  )
-@@ -1009,16 +1125,19 @@
+@@ -1009,16 +1126,19 @@
      nv_work_t *work = NV_WORKQUEUE_UNPACK_DATA(data);
      nvidia_stack_t *sp = NULL;
  
@@ -260,7 +260,7 @@
  }
  
  NV_STATUS NV_API_CALL os_queue_work_item(
-@@ -1037,7 +1156,12 @@
+@@ -1037,7 +1157,12 @@
  
      NV_WORKQUEUE_INIT(&work->task, os_execute_work_item,
                        (void *)work);
@@ -282,17 +282,33 @@
      rm_gvi_bh(nvl->sp[NV_DEV_STACK_ISR_BH], nv);
 +    nv_workqueue_complete();
  }
-@@ -87,6 +88,7 @@
-         
-     nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
+@@ -80,15 +80,20 @@
+ 
+     nv = NV_STATE_PTR(lnv);
+ 
+-    status = rm_shutdown_gvi_device(sp, nv);
++    nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
++
++    synchronize_irq(nv->interrupt_line);
++    NV_WORKQUEUE_FLUSH();
++
++    status = rm_shutdown_gvi_device(sp, nv);
+     if (status != 0)
+     {
++        nv->flags &= ~NV_FLAG_GVI_IN_SUSPEND;
+         nv_printf(NV_DBG_ERRORS, "NVGVI: failed to stop gvi!\n");
+         goto failed;
+     }
+-        
+-    nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
  
 +    synchronize_irq(nv->interrupt_line);
-     NV_WORKQUEUE_FLUSH();
  
      status = rm_gvi_suspend(sp, nv);
+     if (status != 0)
 --- a/nvidia/nv.c
 +++ b/nvidia/nv.c
-@@ -854,8 +854,19 @@
+@@ -854,7 +854,18 @@
  
      }
  
@@ -311,47 +327,70 @@
 +        nv_workqueue_shutdown();
          nv_kmem_cache_free_stack(sp);
          NV_KMEM_CACHE_DESTROY(nvidia_stack_t_cache);
-         nv_printf(NV_DBG_ERRORS, "NVRM: rm_init_rm() failed!\n");
-@@ -1144,6 +1155,7 @@
+@@ -1144,5 +1155,6 @@
      nv_unregister_chrdev((void *)&nv_fops);
  
  failed4:
 +    nv_workqueue_shutdown();
      nv_lock_destroy_locks(sp, nv);
      rm_shutdown_rm(sp);
- 
-@@ -1197,6 +1209,7 @@
- 
+@@ -1197,4 +1209,5 @@
      nv_unregister_chrdev((void *)&nv_fops);
  
 +    nv_workqueue_shutdown();
      nv_lock_destroy_locks(sp, nv);
  
-     // Shutdown the resource manager
-@@ -1894,8 +1907,8 @@
+@@ -1586,6 +1599,7 @@
+             nvl->work.data = (void *)nvl;
+             NV_WORKQUEUE_INIT(&nvl->work.task, nv_gvi_kern_bh,
+                               (void *)&nvl->work);
++            nv->flags &= ~NV_FLAG_GVI_IN_SUSPEND;
+             rm_init_gvi_device(sp, nv);
+             goto done;
+         }
+@@ -1894,6 +1908,9 @@
      if (NV_IS_GVI_DEVICE(nv))
      {
-         rm_shutdown_gvi_device(sp, nv);
--        NV_WORKQUEUE_FLUSH();
+-        rm_shutdown_gvi_device(sp, nv);
++        nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
++        synchronize_irq(nv->interrupt_line);
+         NV_WORKQUEUE_FLUSH();
++        rm_shutdown_gvi_device(sp, nv);
++        synchronize_irq(nv->interrupt_line);
          free_irq(nv->interrupt_line, (void *)nvl);
-+        NV_WORKQUEUE_FLUSH();
      }
-     else
+@@ -4110,15 +4127,25 @@
+     if ((nv->flags & NV_FLAG_PERSISTENT_SW_STATE) || (nv->flags & NV_FLAG_OPEN))
      {
-@@ -4110,6 +4123,12 @@
+         if (nv->flags & NV_FLAG_PERSISTENT_SW_STATE)
+         {
+             rm_disable_gpu_state_persistence(sp, nv);
          }
-         nv_shutdown_adapter(sp, nv, nvl);
+-        nv_shutdown_adapter(sp, nv, nvl);
+-        if (NV_IS_GVI_DEVICE(nv))
+-            NV_WORKQUEUE_FLUSH();
 +        if (NV_IS_GVI_DEVICE(nv))
++        {
++            nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
++            synchronize_irq(nv->interrupt_line);
 +            NV_WORKQUEUE_FLUSH();
++            rm_shutdown_gvi_device(sp, nv);
++            synchronize_irq(nv->interrupt_line);
++            free_irq(nv->interrupt_line, (void *)nvl);
++        }
++        else
++        {
++            nv_shutdown_adapter(sp, nv, nvl);
++        }
          nv_dev_free_stacks(nvl);
      }
-+    else if (NV_IS_GVI_DEVICE(nv))
-+    {
-+        NV_WORKQUEUE_FLUSH();
-+    }
+     else if (NV_IS_GVI_DEVICE(nv))
+     {
+         NV_WORKQUEUE_FLUSH();
+     }
+@@ -4128,7 +4155,6 @@
+     pci_set_drvdata(dev, NULL);
  
-     nv_destroy_ibmnpu_info(nv);
-@@ -4128,5 +4148,4 @@
      if (NV_IS_GVI_DEVICE(nv))
      {
 -        NV_WORKQUEUE_FLUSH();
