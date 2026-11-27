@@ -327,6 +327,19 @@
 +
      status = rm_gvi_suspend(sp, nv);
      if (status != 0)
+@@ -131,6 +137,9 @@
+     nv = NV_STATE_PTR(lnv);
+-    status = rm_gvi_resume(sp, nv);
+-    if (status == NV_OK)
+-        nv->flags &= ~NV_FLAG_GVI_IN_SUSPEND;
++    /* rm_gvi_resume reenables GVI interrupts before it returns. */
++    /* Open the bottom-half gate first so a pending IRQ is not lost. */
++    nv->flags &= ~NV_FLAG_GVI_IN_SUSPEND;
++    status = rm_gvi_resume(sp, nv);
++    if (status != NV_OK)
++        nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
+     nv_kmem_cache_free_stack(sp);
+     return status;
 --- a/nvidia/nv.c
 +++ b/nvidia/nv.c
 @@ -854,7 +854,18 @@
