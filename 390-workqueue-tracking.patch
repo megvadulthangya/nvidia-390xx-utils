@@ -1,6 +1,6 @@
 --- a/common/inc/nv-linux.h
 +++ b/common/inc/nv-linux.h
-@@ -1546,9 +1546,14 @@
+@@ -1546,9 +1546,17 @@
      void *data;
  } nv_work_t;
  
@@ -13,11 +13,84 @@
 +void NV_API_CALL nv_workqueue_complete(void);
 +void NV_API_CALL nv_workqueue_flush(void);
 +
++int nvidia_wq_queue(nv_task_t *work);
++void nvidia_wq_flush(void);
++
 +#define NV_WORKQUEUE_SCHEDULE(work) nv_workqueue_schedule(work)
 +#define NV_WORKQUEUE_FLUSH() nv_workqueue_flush()
  #if (NV_INIT_WORK_ARGUMENT_COUNT == 2)
  #define NV_WORKQUEUE_INIT(tq,handler,data)             \
      {                                                  \
+--- a/nvidia/nvidia.Kbuild
++++ b/nvidia/nvidia.Kbuild
+@@ -1,2 +1,4 @@
+ obj-m += nvidia.o
++obj-m += nvidia-wq.o
++nvidia-wq-y := nvidia/nv-workqueue.o
+ nvidia-y := $(NVIDIA_OBJECTS)
+--- /dev/null
++++ b/nvidia/nv-workqueue.c
+@@ -0,0 +1,60 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Dedicated workqueue for the NVIDIA 390xx kernel module.
++ *
++ * The helper is GPL-licensed because workqueue allocation and destruction
++ * are GPL-only kernel APIs. The proprietary nvidia.ko module uses only the
++ * non-GPL exported queue and flush wrappers below.
++ */
++
++#include <linux/errno.h>
++#include <linux/export.h>
++#include <linux/init.h>
++#include <linux/module.h>
++#include <linux/version.h>
++#include <linux/workqueue.h>
++
++static struct workqueue_struct *nvidia_390xx_wq;
++
++int nvidia_wq_queue(struct work_struct *work)
++{
++    return queue_work(nvidia_390xx_wq, work);
++}
++EXPORT_SYMBOL(nvidia_wq_queue);
++
++void nvidia_wq_flush(void)
++{
++    __flush_workqueue(nvidia_390xx_wq);
++}
++EXPORT_SYMBOL(nvidia_wq_flush);
++
++static int __init nvidia_wq_module_init(void)
++{
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++    nvidia_390xx_wq = alloc_workqueue("nvidia-390xx", WQ_PERCPU, 0);
++#else
++    nvidia_390xx_wq = alloc_workqueue("nvidia-390xx", 0, 0);
++#endif
++
++    if (nvidia_390xx_wq == NULL)
++        return -ENOMEM;
++
++    return 0;
++}
++
++static void __exit nvidia_wq_module_exit(void)
++{
++    if (nvidia_390xx_wq != NULL)
++    {
++        drain_workqueue(nvidia_390xx_wq);
++        destroy_workqueue(nvidia_390xx_wq);
++        nvidia_390xx_wq = NULL;
++    }
++}
++
++module_init(nvidia_wq_module_init);
++module_exit(nvidia_wq_module_exit);
++
++MODULE_DESCRIPTION("Dedicated workqueue for NVIDIA 390xx");
++MODULE_LICENSE("GPL");
++
 --- a/nvidia/os-interface.c
 +++ b/nvidia/os-interface.c
 @@ -9,6 +9,12 @@
@@ -45,28 +118,18 @@
  #define MAX_ERROR_STRING 512
  static char nv_error_string[MAX_ERROR_STRING];
  nv_spinlock_t nv_error_string_lock;
-@@ -1002,6 +1012,122 @@
+@@ -1002,6 +1012,112 @@
      }
  }
  
 +/*
-+ * schedule_work() changed its backing queue in Linux 6.18:
-+ * system_wq is used through 6.17, system_percpu_wq from 6.18 onward.
-+ * Flush the same queue that receives the NVIDIA work items.
-+ *
-+ * __flush_workqueue() waits for work items queued on entry to finish
-+ * executing, including the callback return. This is a system-wide flush;
-+ * callers must first stop or quiesce NVIDIA work submissions. Calling
-+ * the exported primitive directly avoids the stack-dump warning wrapper
-+ * in flush_scheduled_work().
++ * All NVIDIA work items are placed on a private queue. In particular, do
++ * not flush system_wq/system_percpu_wq: unrelated kernel work such as
++ * delayed_fput may execute NVIDIA file-release paths on those queues.
 + */
-+static void nv_workqueue_flush_system_queue(void)
++static void nv_workqueue_flush_private_queue(void)
 +{
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
-+    __flush_workqueue(system_percpu_wq);
-+#else
-+    __flush_workqueue(system_wq);
-+#endif
++    nvidia_wq_flush();
 +}
 +
 +int NV_API_CALL nv_workqueue_init(void)
@@ -118,7 +181,7 @@
 +    }
 +
 +    /* Wait for the final callback to return, not merely to decrement pending. */
-+    nv_workqueue_flush_system_queue();
++    nv_workqueue_flush_private_queue();
 +}
 +
 +int NV_API_CALL nv_workqueue_schedule(nv_task_t *work)
@@ -138,7 +201,7 @@
 +    atomic_inc(&nv_workqueue_pending);
 +
 +    /* Queue before releasing the lock so shutdown cannot miss this item. */
-+    queued = schedule_work(work);
++    queued = nvidia_wq_queue(work);
 +    if (!queued)
 +        wake = atomic_dec_and_test(&nv_workqueue_pending);
 +
@@ -161,14 +224,14 @@
 +    wait_event(nv_workqueue_wait_queue,
 +               atomic_read(&nv_workqueue_pending) == 0);
 +
-+    /* pending reaches zero before the workqueue callback itself returns. */
-+    nv_workqueue_flush_system_queue();
++    /* __flush_workqueue() waits for the callback itself to return. */
++    nv_workqueue_flush_private_queue();
 +}
 +
  static void os_execute_work_item(
      NV_WORKQUEUE_DATA_T *data
  )
-@@ -1009,16 +1126,19 @@
+@@ -1009,16 +1125,19 @@
      nv_work_t *work = NV_WORKQUEUE_UNPACK_DATA(data);
      nvidia_stack_t *sp = NULL;
  
@@ -194,7 +257,7 @@
  }
  
  NV_STATUS NV_API_CALL os_queue_work_item(
-@@ -1037,7 +1157,12 @@
+@@ -1037,7 +1156,12 @@
  
      NV_WORKQUEUE_INIT(&work->task, os_execute_work_item,
                        (void *)work);
@@ -217,7 +280,7 @@
 +    nv_workqueue_complete();
  }
 @@ -87,6 +88,7 @@
- 
+         
      nv->flags |= NV_FLAG_GVI_IN_SUSPEND;
  
 +    synchronize_irq(nv->interrupt_line);
@@ -226,7 +289,7 @@
      status = rm_gvi_suspend(sp, nv);
 --- a/nvidia/nv.c
 +++ b/nvidia/nv.c
-@@ -854,10 +854,21 @@
+@@ -854,8 +854,19 @@
  
      }
  
@@ -246,8 +309,6 @@
          nv_kmem_cache_free_stack(sp);
          NV_KMEM_CACHE_DESTROY(nvidia_stack_t_cache);
          nv_printf(NV_DBG_ERRORS, "NVRM: rm_init_rm() failed!\n");
-         rc = -EIO;
-         goto failed5;
 @@ -1144,6 +1155,7 @@
      nv_unregister_chrdev((void *)&nv_fops);
  

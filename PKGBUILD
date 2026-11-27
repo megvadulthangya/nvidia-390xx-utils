@@ -194,7 +194,7 @@
 pkgbase=nvidia-390xx-utils
 pkgname=('nvidia-390xx-utils' 'opencl-nvidia-390xx' 'nvidia-390xx-dkms' 'mhwd-nvidia-390xx')
 pkgver=390.157
-pkgrel=7
+pkgrel=8
 arch=('x86_64')
 url="https://www.nvidia.com/"
 license=('custom')
@@ -430,7 +430,7 @@ sha256sums=('162317a49aa5a521eb888ec12119bfe5a45cec4e8653efc575a2d04fb05bf581'
             '919b2b04357ce50a461d1a407bf7c9c58fad632a8c8285754b550b6e177575a5'
             'f07ab1ad7b4cfb471c267b6761cf172715d50a1e3c56220c3eed146300aa7fb6'
             '086c779f0ee8343d2d17124999ced58939362ac4078df2e65e894c76ce06af7a'
-            'e68ff5dcf64dee0f1793557e24f6ca503385fdd0022bbef0251b2c92da02630e'
+            '6698d0b44bab4340d8ef9506dd2501bbdef5f7e0427542d07eb3994e8f9c097e'
             '91791c813a96a770c34b84641552fc6d66c4200914451d8439cdfd2803c5995d'
             '6f36928fc6a381a4ff6665ed61f848e6ac2855e4320ffca1409571a871a81d37'
             '840dd91ffae9ca57fc8522e88d461092fc69287d5f0eae3f0de2fc1d753ebd71'
@@ -577,7 +577,7 @@ EOF_HEADER
     echo ">>> DKMS workaround hozzáadva a kernel/Makefile tetejére."
 
     # -------------------------------------------------------------------------
-    # 4. DKMS dkms.conf előkészítése — 390-nél 4 modul.
+    # 4. DKMS dkms.conf előkészítése — 390-nél 5 modul.
     # -------------------------------------------------------------------------
     sed -i "s/__VERSION_STRING/${pkgver}/" dkms.conf
     sed -i 's/__JOBS/`nproc`/' dkms.conf
@@ -589,7 +589,9 @@ DEST_MODULE_LOCATION[1]="/kernel/drivers/video"\
 BUILT_MODULE_NAME[2]="nvidia-modeset"\
 DEST_MODULE_LOCATION[2]="/kernel/drivers/video"\
 BUILT_MODULE_NAME[3]="nvidia-drm"\
-DEST_MODULE_LOCATION[3]="/kernel/drivers/video"' dkms.conf
+DEST_MODULE_LOCATION[3]="/kernel/drivers/video"\
+BUILT_MODULE_NAME[4]="nvidia-wq"\
+DEST_MODULE_LOCATION[4]="/kernel/drivers/video"' dkms.conf
 
     sed -i 's/NV_EXCLUDE_BUILD_MODULES/IGNORE_PREEMPT_RT_PRESENCE=1 NV_EXCLUDE_BUILD_MODULES/' dkms.conf
 
