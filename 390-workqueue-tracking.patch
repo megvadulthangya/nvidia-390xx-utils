@@ -374,14 +374,25 @@
 +    nv_workqueue_shutdown();
      nv_lock_destroy_locks(sp, nv);
  
-@@ -1586,6 +1599,7 @@
-             nvl->work.data = (void *)nvl;
-             NV_WORKQUEUE_INIT(&nvl->work.task, nv_gvi_kern_bh,
-                               (void *)&nvl->work);
-+            nv->flags &= ~NV_FLAG_GVI_STOPPING;
+@@ -1582,13 +1595,14 @@
+     if (NV_IS_GVI_DEVICE(nv))
+     {
++        nvl->work.data = (void *)nvl;
++        NV_WORKQUEUE_INIT(&nvl->work.task, nv_gvi_kern_bh,
++                          (void *)&nvl->work);
++        nv->flags &= ~NV_FLAG_GVI_STOPPING;
+         rc = request_irq(nv->interrupt_line, nv_gvi_kern_isr, IRQF_SHARED,
+                          nv_device_name, (void *)nvl);
+         if (rc == 0)
+         {
+-            nvl->work.data = (void *)nvl;
+-            NV_WORKQUEUE_INIT(&nvl->work.task, nv_gvi_kern_bh,
+-                              (void *)&nvl->work);
+-            nv->flags &= ~NV_FLAG_GVI_STOPPING;
              rm_init_gvi_device(sp, nv);
              goto done;
          }
+     }
 @@ -1894,6 +1908,9 @@
      if (NV_IS_GVI_DEVICE(nv))
      {
