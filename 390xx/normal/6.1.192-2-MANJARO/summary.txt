@@ -1,0 +1,20 @@
+build:           linux61-nvidia-390xx
+driver:          390xx
+variant:         normal
+kernel:          6.1.192-2-MANJARO
+nvidia version:  390.157
+status:          clean
+log path:        /build/sources/nvidia-390xx/normal-kernels/linux61-nvidia-390xx/src/nvidia/390.157/6.1.192-2-MANJARO/x86_64/log/make.log
+log size:        28365021 bytes
+log lines:       165655
+build dir:       /build/sources/nvidia-390xx/normal-kernels/linux61-nvidia-390xx
+raw log:         make.log.zst
+
+errors:          0
+warnings clean:  0  (unique: 0)
+warnings noise:  164942  (unique: 10)
+suspicious:      0  (unique: 0)
+modules on disk: 5  [nvidia, nvidia-drm, nvidia-modeset, nvidia-uvm, nvidia-wq]
+log LD [M]:      ['nvidia', 'nvidia-drm', 'nvidia-modeset', 'nvidia-uvm', 'nvidia-wq']
+log MODPOST:     yes
+log cached:      no

@@ -1,0 +1,64 @@
+{
+  "driver_family": "390xx",
+  "source_repository": "megvadulthangya/nvidia-390xx-utils",
+  "source_branch": "develop",
+  "source_sha": "6cf3703d3d82b72dd86b1afbaff2e06edbf5b998",
+  "kernel_repository": "megvadulthangya/nvidia-390xx",
+  "kernel_branch": "develop",
+  "manjaro_branch": "testing",
+  "utils_pkgver": "390.157",
+  "utils_pkgrel": "8",
+  "kernel_matrix": [
+    {
+      "kernel": "linux-next",
+      "variant": "normal",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux61",
+      "variant": "normal",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux61-rt",
+      "variant": "rt",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux612",
+      "variant": "normal",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux612-rt",
+      "variant": "rt",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux618",
+      "variant": "normal",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux66",
+      "variant": "normal",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux66-rt",
+      "variant": "rt",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux73",
+      "variant": "normal",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    },
+    {
+      "kernel": "linux74",
+      "variant": "normal",
+      "package": "${_linuxprefix}-nvidia-390xx"
+    }
+  ],
+  "run_started_utc": "2026-11-28T15:43:02.270224+00:00"
+}

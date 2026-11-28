@@ -1,0 +1,10 @@
+   65370  warning: objtool: <func>+0xADDR: data relocation to !ENDBR: <func>+0xADDR
+   39879  warning: objtool: <func>+0xADDR: 'naked' return found in RETHUNK build
+   39879  warning: objtool: <func>+0xADDR: missing int3 after ret
+   19803  warning: objtool: <func>+0xADDR: relocation to !ENDBR: <func>+0xADDR
+       5  warning: objtool: <func>+0xADDR: return with modified stack frame
+       2  warning: objtool: <func>+0xADDR: stack state mismatch: reg1[5]=-1+0 reg2[5]=-2-48
+       1  warning: objtool: <func>+0xADDR: stack state mismatch: reg1[5]=-1+0 reg2[5]=-2-40
+       1  warning: objtool: <func>+0xADDR: stack state mismatch: reg1[5]=-1+0 reg2[5]=-2-32
+       1  warning: objtool: <func>+0xADDR: stack state mismatch: reg1[5]=-1+0 reg2[5]=-2-112
+       1  warning: objtool: <func>+0xADDR: stack state mismatch: reg1[5]=-1+0 reg2[5]=-2-64

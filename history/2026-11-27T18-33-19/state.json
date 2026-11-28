@@ -1,0 +1,109 @@
+{
+  "builds": {
+    "390xx/normal/linux-next-nvidia-390xx": {
+      "clean_total": 2,
+      "clean_uniq": 2,
+      "err_count": 0,
+      "noise_total": 94474,
+      "status": "warnings",
+      "suspicious_total": 0
+    },
+    "390xx/normal/linux61-nvidia-390xx": {
+      "clean_total": 0,
+      "clean_uniq": 0,
+      "err_count": 0,
+      "noise_total": 164942,
+      "status": "clean",
+      "suspicious_total": 0
+    },
+    "390xx/normal/linux612-nvidia-390xx": {
+      "clean_total": 2,
+      "clean_uniq": 2,
+      "err_count": 0,
+      "noise_total": 94474,
+      "status": "warnings",
+      "suspicious_total": 0
+    },
+    "390xx/normal/linux618-nvidia-390xx": {
+      "clean_total": 2,
+      "clean_uniq": 2,
+      "err_count": 0,
+      "noise_total": 94474,
+      "status": "warnings",
+      "suspicious_total": 0
+    },
+    "390xx/normal/linux66-nvidia-390xx": {
+      "clean_total": 0,
+      "clean_uniq": 0,
+      "err_count": 0,
+      "noise_total": 94474,
+      "status": "clean",
+      "suspicious_total": 0
+    },
+    "390xx/normal/linux73-nvidia-390xx": {
+      "clean_total": 2,
+      "clean_uniq": 2,
+      "err_count": 0,
+      "noise_total": 94474,
+      "status": "warnings",
+      "suspicious_total": 0
+    },
+    "390xx/normal/linux74-nvidia-390xx": {
+      "clean_total": 2,
+      "clean_uniq": 2,
+      "err_count": 0,
+      "noise_total": 94474,
+      "status": "warnings",
+      "suspicious_total": 0
+    },
+    "390xx/rt/linux61-rt-nvidia-390xx": {
+      "clean_total": 0,
+      "clean_uniq": 0,
+      "err_count": 0,
+      "noise_total": 164942,
+      "status": "clean",
+      "suspicious_total": 0
+    },
+    "390xx/rt/linux612-rt-nvidia-390xx": {
+      "clean_total": 2,
+      "clean_uniq": 2,
+      "err_count": 0,
+      "noise_total": 94474,
+      "status": "warnings",
+      "suspicious_total": 0
+    },
+    "390xx/rt/linux66-rt-nvidia-390xx": {
+      "clean_total": 0,
+      "clean_uniq": 0,
+      "err_count": 0,
+      "noise_total": 94474,
+      "status": "clean",
+      "suspicious_total": 0
+    }
+  },
+  "clean_signatures": {
+    "warning: no previous prototype for 'nvidia_wq_flush' [-Wmissing-prototypes]": {
+      "builds": [
+        "390xx/normal/linux-next-nvidia-390xx",
+        "390xx/normal/linux612-nvidia-390xx",
+        "390xx/normal/linux618-nvidia-390xx",
+        "390xx/normal/linux73-nvidia-390xx",
+        "390xx/normal/linux74-nvidia-390xx",
+        "390xx/rt/linux612-rt-nvidia-390xx"
+      ],
+      "hits": 6
+    },
+    "warning: no previous prototype for 'nvidia_wq_queue' [-Wmissing-prototypes]": {
+      "builds": [
+        "390xx/normal/linux-next-nvidia-390xx",
+        "390xx/normal/linux612-nvidia-390xx",
+        "390xx/normal/linux618-nvidia-390xx",
+        "390xx/normal/linux73-nvidia-390xx",
+        "390xx/normal/linux74-nvidia-390xx",
+        "390xx/rt/linux612-rt-nvidia-390xx"
+      ],
+      "hits": 6
+    }
+  },
+  "timestamp": "2026-11-27T18-33-19"
+}

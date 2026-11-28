@@ -1,0 +1,10 @@
+DKMS (dkms-3.4.5) make.log for nvidia/390.157 for kernel 6.12.117-1-MANJARO (x86_64)
+Sat Nov 28 03:50:33 PM UTC 2026
+
+Building module(s)
+# command: 'make' -j4 IGNORE_PREEMPT_RT_PRESENCE=1 NV_EXCLUDE_BUILD_MODULES='__EXCLUDE_MODULES' KERNEL_UNAME=6.12.117-1-MANJARO modules
+make -C /lib/modules/6.12.117-1-MANJARO/build M=/build/sources/nvidia-390xx/normal-kernels/linux612-nvidia-390xx/src/nvidia/390.157/build ARCH=x86_64 NV_KERNEL_SOURCES=/lib/modules/6.12.117-1-MANJARO/build NV_KERNEL_OUTPUT=/lib/modules/6.12.117-1-MANJARO/build NV_KERNEL_MODULES="nvidia nvidia-uvm nvidia-modeset nvidia-drm" INSTALL_MOD_DIR=kernel/drivers/video NV_SPECTRE_V2=0 modules
+make[1]: Entering directory '/usr/lib/modules/6.12.117-1-MANJARO/build'
+uname -a
+Linux 0405b3a6aff3 7.0.0-1020-azure #21-Ubuntu SMP PREEMPT Tue Oct 27 22:34:38 UTC 2026 x86_64 GNU/Linux
+NV_CONFTEST_CMD=/bin/sh /build/sources/nvidia-390xx/normal-kernels/linux612-nvidia-390xx/src/nvidia/390.157/build/conftest.sh "gcc" "gcc" x86_64 /lib/modules/6.12.117-1-MANJARO/build /lib/modules/6.12.117-1-MANJARO/build
